@@ -8,17 +8,10 @@ SRC_CPP_EXES := $(SRC_CPP_FILES:.cu=)
 
 HEADER_DIR := ./src/cpp/headers
 
-$(TEST_CPP_EXES): %: %.cu
-	nvcc -o $@ $< -I $(HEADER_DIR)
+GPT_2_DIR := ./gpt2/
+COMPILED_LIBRARY := ./src/py/*.so
 
-$(SRC_CPP_EXES): %: %.cu
-	nvcc -o $@ $< -I $(HEADER_DIR)
-
-test-cpp: $(TEST_CPP_EXES)	
-	@set -e; for t in $(TESTS); do ./$$t; done
-	@echo "All cpp tests passed"
-
-test-py:
+test:
 	uv run -m pytest
 
 install: 
@@ -28,6 +21,6 @@ inference: install
 	uv run python ./src/py/model_inference.py
 
 clean:
-	rm -rf $(TEST_OBJS)
+	rm -rf $(GPT2_DIR) $(COMPILED_LIBRARY)
 
 
