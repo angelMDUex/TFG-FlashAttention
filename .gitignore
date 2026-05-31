@@ -1,0 +1,22 @@
+# Python-generated files
+**/__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Pybind file
+**/custom_flash_attn.cpython-311-x86_64-linux-gnu.so
+
+# Virtual environments
+.venv
+.envrc
+
+# Configuration files
+.clang-format
+.data/
+.gpt2/
+
+# Caches
+.pytest_cache
