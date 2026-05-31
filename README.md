@@ -6,11 +6,18 @@ Institution: Universidad de Extremadura (UEx)
 
 ## Overview
 
-This repository implements GPT2 with the intent of familiarizing myself with modern deep learning concepts. Multiple versions of flash attention have been implemented in CUDA, OpenAi's Triton and standard pytorch too. The objectives of the project were then two:
-1- To understand modern deep learning 
-2- Understand low-level code optimizations in GPUs. 
+This repository contains the source code for my Bachelor's Thesis (Trabajo de Fin de Grado), which centers on implementing a GPT-2 architecture from scratch to explore modern deep learning concepts and low-level hardware acceleration. 
 
-The full written thesis document is available in [Final.pdf](./Final.pdf).
+A core focus of this project is the implementation and evaluation of the FlashAttention mechanism across different paradigms. This repository includes versions implemented in:
+* **Standard PyTorch** (for baseline comparison)
+* **OpenAI Triton** (for high-level GPU programming)
+* **Custom CUDA** (for low-level hardware optimization)
+
+The project was developed with two primary objectives:
+1. To gain a comprehensive understanding of modern deep learning architectures and transformer mechanics.
+2. To master low-level code optimizations, memory tiling, and SRAM management on GPU hardware.
+
+The full written thesis document detailing the mathematical foundations and performance benchmarks is available in [Final.pdf](./Final.pdf).
 
 ---
 
