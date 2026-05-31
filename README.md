@@ -6,7 +6,9 @@ Institution: Universidad de Extremadura (UEx)
 
 ## Overview
 
-This project is an implementation of GPT2 to familiarize myself with modern deep learning concepts. Multiple versions of flash attention have been implemented too, in CUDA, OpenAi's Triton and standard pytorch implementations. The objectives of the project were to understand modern deep learning and understand low-level code optimizations in GPUs. 
+This repository implements GPT2 with the intent of familiarizing myself with modern deep learning concepts. Multiple versions of flash attention have been implemented in CUDA, OpenAi's Triton and standard pytorch too. The objectives of the project were then two:
+1- To understand modern deep learning 
+2- Understand low-level code optimizations in GPUs. 
 
 The full written thesis document is available in [Final.pdf](./Final.pdf).
 
