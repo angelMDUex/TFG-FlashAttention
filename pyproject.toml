@@ -24,3 +24,9 @@ build-backend = "uv_build"
 [tool.uv.build-backend]
 module-root = "src/py"
 module-name = "tfg_fa"
+
+[tool.pytest.ini_options]
+markers = [
+  "tiempo: tests de benchmark/rendimiento",
+  "profile: tests enfocados al profilado con ncu"
+]

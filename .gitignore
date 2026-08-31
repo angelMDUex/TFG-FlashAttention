@@ -1,0 +1,71 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+ENV/
+
+# Pytest / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Mypy / Ruff / Pyright
+.mypy_cache/
+.ruff_cache/
+.pyright/
+.pyre/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Build / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# C/C++ / CUDA generados
+*.o
+*.obj
+*.so
+*.a
+*.dll
+*.dylib
+compile_commands.json
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+
+# Nsight / profiling
+profile/
+*.ncu-rep
+*.nsys-rep
+*.qdrep
+
+# Logs / temporales
+*.log
+*.tmp
+*.swp
+*~
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Variables locales
+.env
+.env.*
+.direnv/

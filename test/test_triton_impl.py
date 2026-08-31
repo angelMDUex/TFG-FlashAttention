@@ -1,4 +1,5 @@
 import torch
+import pytest
 import nvtx
 
 from tfg_fa.triton_impl import flash_attention
@@ -30,7 +31,7 @@ def test_flash_attention():
         atol=2e-2,
     )
 
-
+@pytest.mark.profile
 def test_profile_flash_attention():
     n = 8192
     d = 128
@@ -50,10 +51,13 @@ def test_profile_flash_attention():
     torch.cuda.synchronize()
 
 
+@pytest.mark.tiempo
+def test_tiempo_benchmark_flash_attention():
+    torch.manual_seed(0)
+    torch.cuda.manual_seed_all(0)
 
-def test_benchmark_flash_attention():
     d = 128
-    seq_lens = [1024, 2048, 4096, 8192, 16384, 32768]
+    seq_lens = [1 << i for i in range(13, 21)]
     repeats = 100
 
     means = []

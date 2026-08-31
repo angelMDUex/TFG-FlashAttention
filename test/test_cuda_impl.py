@@ -1,4 +1,6 @@
 import torch
+import nvtx
+import pytest
 import torch.nn.functional as F
 
 from tfg_fa import tfg_fa_cuda
@@ -193,10 +195,34 @@ def test_cuda_attention_weight_layout():
     print("sum first 128:", weights.sum().item())
     print("weight key 0:", weights[0].item())
 
+@pytest.mark.profile
+def test_profile_cuda():
+    torch.manual_seed(0)
 
-def test_benchmark_cuda():
+    n = 8192
     d = 128
-    seq_lens = [1024, 2048, 4096, 8192, 16384, 32768]
+
+    q = torch.randn((n, d), device="cuda", dtype=torch.bfloat16)
+    k = torch.randn_like(q)
+    v = torch.randn_like(q)
+
+    # Warmup
+    tfg_fa_cuda.flash_attention(q, k, v)
+    torch.cuda.synchronize()
+
+    # Único launch que queremos perfilar
+    with nvtx.annotate("profile_fa_cuda"):
+        tfg_fa_cuda.flash_attention(q, k, v)
+
+    torch.cuda.synchronize()
+
+@pytest.mark.tiempo
+def test_benchmark_cuda():
+    torch.manual_seed(0)
+    torch.cuda.manual_seed_all(0)
+
+    d = 128
+    seq_lens = [1 << i for i in range(13, 21)]
     repeats = 100
 
     means = []
@@ -208,7 +234,7 @@ def test_benchmark_cuda():
         v = torch.randn_like(q)
 
         # Warmup
-        flash_attention_cuda(q, k, v)
+        tfg_fa_cuda.flash_attention(q, k, v)
         torch.cuda.synchronize()
 
         times = []
@@ -218,7 +244,7 @@ def test_benchmark_cuda():
             end = torch.cuda.Event(enable_timing=True)
 
             start.record()
-            flash_attention_cuda(q, k, v)
+            tfg_fa_cuda.flash_attention(q, k, v)
             end.record()
 
             torch.cuda.synchronize()

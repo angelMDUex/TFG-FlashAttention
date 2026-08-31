@@ -44,20 +44,10 @@ torch::Tensor flash_attention_cuda(torch::Tensor q, torch::Tensor k, torch::Tens
     auto *k_ptr = reinterpret_cast<const __nv_bfloat16 *>(k.data_ptr());
     auto *v_ptr = reinterpret_cast<const __nv_bfloat16 *>(v.data_ptr());
     auto *o_ptr = reinterpret_cast<__nv_bfloat16 *>(out.data_ptr());
-
-    // Idealmente cambia tu launcher para recibir stream.
+    
     cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
     switch (N) {
-    case 1024:
-      fa_launcher<1024, 128>(q_ptr, k_ptr, v_ptr, o_ptr, stream);
-      break;
-    case 2048:
-      fa_launcher<2048, 128>(q_ptr, k_ptr, v_ptr, o_ptr, stream);
-      break;
-    case 4096:
-      fa_launcher<4096, 128>(q_ptr, k_ptr, v_ptr, o_ptr, stream);
-      break;
     case 8192:
       fa_launcher<8192, 128>(q_ptr, k_ptr, v_ptr, o_ptr, stream);
       break;
@@ -66,6 +56,21 @@ torch::Tensor flash_attention_cuda(torch::Tensor q, torch::Tensor k, torch::Tens
       break;
     case 32768:
       fa_launcher<32768, 128>(q_ptr, k_ptr, v_ptr, o_ptr, stream);
+      break;
+    case 65536:
+      fa_launcher<65536, 128>(q_ptr, k_ptr, v_ptr, o_ptr, stream);
+      break;
+    case 131072:
+      fa_launcher<131072, 128>(q_ptr, k_ptr, v_ptr, o_ptr, stream);
+      break;
+    case 262144:
+      fa_launcher<262144, 128>(q_ptr, k_ptr, v_ptr, o_ptr, stream);
+      break;
+    case 524288:
+      fa_launcher<524288, 128>(q_ptr, k_ptr, v_ptr, o_ptr, stream);
+      break;
+    case 1048576:
+      fa_launcher<1048576, 128>(q_ptr, k_ptr, v_ptr, o_ptr, stream);
       break;
     default:
       TORCH_CHECK(false, "Unsupported sequence length: ", N);

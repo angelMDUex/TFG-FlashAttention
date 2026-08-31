@@ -24,7 +24,7 @@
 int main()
 {
     constexpr uint32_t head_dim = 128;
-    constexpr uint32_t seq_len = 1 << 20;
+    constexpr uint32_t seq_len = 8192;
 
     __nv_bfloat16 *Q, *K, *V, *O;
 
