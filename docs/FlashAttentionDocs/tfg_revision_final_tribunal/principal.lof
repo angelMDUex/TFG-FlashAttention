@@ -1,0 +1,13 @@
+\babel@toc {spanish}{}\relax 
+\addvspace {10\p@ }
+\addvspace {10\p@ }
+\addvspace {10\p@ }
+\addvspace {10\p@ }
+\addvspace {10\p@ }
+\addvspace {10\p@ }
+\contentsline {figure}{\numberline {6.1}{\ignorespaces Residencia permitida por recursos frente a trabajo disponible para el kernel CUDA.}}{47}{figure.caption.12}%
+\contentsline {figure}{\numberline {6.2}{\ignorespaces Interpretación conceptual de la reutilización de un tile de \(K,V\) sobre las filas de consultas procesadas por un CTA.}}{50}{figure.caption.17}%
+\contentsline {figure}{\numberline {6.3}{\ignorespaces Tiempo medio de ejecución frente a longitud de secuencia, con eje vertical lineal.}}{53}{figure.caption.21}%
+\addvspace {10\p@ }
+\addvspace {10\p@ }
+\addvspace {10\p@ }

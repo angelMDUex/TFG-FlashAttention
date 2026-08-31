@@ -1,0 +1,374 @@
+\chapter{Estado del arte y Trabajos relacionados}
+La inteligencia artificial ha experimentado en los últimos años un crecimiento extraordinario tanto en inversión como en investigación. Con una frecuencia cada vez mayor, compañías como OpenAI y Anthropic, así como organizaciones y proyectos centrados en modelos abiertos, como DeepSeek o Kimi, presentan nuevos modelos que incorporan arquitecturas, técnicas de entrenamiento y mecanismos de inferencia diferentes.
+
+Esta evolución no se limita únicamente al diseño de los modelos. El hardware empleado para su entrenamiento y ejecución también se encuentra en constante desarrollo, con el objetivo de mejorar tanto el rendimiento como la eficiencia energética. En este contexto coexisten soluciones muy diversas, como las GPU desarrolladas por NVIDIA y AMD, las TPU de Google, los aceleradores de Tenstorrent, los procesadores de Apple, los chips MTIA de Meta, los sistemas de Cerebras y otros aceleradores de propósito específico, además de extensiones incorporadas en procesadores de propósito general, como las instrucciones AMX de Intel. Cada una de estas propuestas presenta una arquitectura diferente, con ventajas, limitaciones y compromisos propios.
+
+De forma paralela, surgen nuevas herramientas, lenguajes y compiladores orientados a aprovechar de manera más eficiente las capacidades específicas de cada arquitectura hardware, al mismo tiempo que intentan reducir la complejidad de su programación. La rápida evolución conjunta de los modelos, el hardware y las herramientas de desarrollo hace especialmente difícil abarcar de forma exhaustiva el estado del arte. Por este motivo, este trabajo se centra en un conjunto concreto de tecnologías y técnicas representativas, en lugar de pretender ofrecer una revisión completa de un campo que se encuentra en continua y rápida evolución.
+
+En este capítulo se presentan algunas de estas tecnologías, describiendo brevemente sus principales características, ventajas y limitaciones. Por un lado, se analizan distintas soluciones hardware orientadas a la aceleración de cargas de inteligencia artificial y, por otro, herramientas, lenguajes y compiladores diseñados para facilitar su programación y aprovechar de forma eficiente las capacidades del hardware disponible.
+
+
+\section{Tecnologías relacionadas: Hardware}
+\subsection{NVIDIA Blackwell (SM100 y SM103)}
+
+Las GPU NVIDIA Blackwell orientadas a centros de datos constituyen una generación posterior a Ampere y amplían de forma importante los mecanismos disponibles para organizar el movimiento de datos y el cómputo. Las características descritas en esta sección se apoyan en la documentación técnica y las guías de programación de NVIDIA para Blackwell \cite{nvidiaBlackwell,nvidiaPTX}.
+
+Con respecto a Ampere, arquitectura sobre la que se desarrolla la implementación CUDA de este trabajo, Blackwell incorpora y amplía diferentes mecanismos destinados a mejorar el movimiento de datos, la utilización de los Tensor Cores y la capacidad de solapar distintas etapas de un kernel. Entre ellos destacan los siguientes:
+
+\begin{itemize}
+
+\item \textbf{Warp specialization.}
+La especialización de warps consiste en asignar funciones diferentes a distintos warps de un mismo bloque. Aunque la técnica no es exclusiva de Blackwell, las nuevas operaciones asíncronas de las generaciones más recientes permiten explotarla de forma especialmente efectiva. Por ejemplo, algunos warps pueden actuar como productores encargados de iniciar transferencias de memoria mediante TMA, mientras que otros actúan como consumidores ejecutando operaciones sobre los Tensor Cores mediante instrucciones \texttt{tcgen05.mma}. Otros warps pueden encargarse de etapas adicionales del algoritmo, como el cálculo del softmax o del epílogo. De esta forma, las distintas fases del kernel pueden ejecutarse de manera solapada y formar un pipeline productor-consumidor.
+
+\item \textbf{Tensor Memory (TMEM).}
+En Ampere, los acumuladores producidos por las instrucciones MMA se almacenan directamente en registros. Blackwell introduce Tensor Memory, una memoria dedicada a las operaciones de los Tensor Cores. En SM100, esta memoria se organiza como una matriz de 128 filas y 512 columnas por CTA, donde cada posición contiene 32 bits, lo que supone un total de 256 KiB. Los resultados de las operaciones \texttt{tcgen05.mma} pueden almacenarse y acumularse directamente en TMEM, reduciendo la presión sobre el fichero de registros. Posteriormente, estos datos pueden transferirse a registros cuando sea necesario realizar operaciones adicionales, como las correspondientes al epílogo.
+
+\item \textbf{Tensor Memory Accelerator (TMA).}
+TMA es un mecanismo hardware para realizar transferencias asíncronas de datos entre memoria global y memoria compartida. A diferencia de las operaciones utilizadas en Ampere, el programador puede describir la disposición de un tensor mediante un \textit{tensor map}, especificando sus dimensiones, strides y otras propiedades. El hardware se encarga entonces de calcular las direcciones necesarias para realizar la transferencia. TMA también permite aplicar directamente patrones de \textit{swizzling} durante la copia a memoria compartida, evitando que el programador tenga que calcular manualmente estas transformaciones y facilitando la reducción de conflictos entre bancos de memoria.
+
+\item \textbf{Thread Block Clusters y Distributed Shared Memory.}
+Los \textit{Thread Block Clusters}, introducidos originalmente en Hopper y soportados también por Blackwell, permiten agrupar varios bloques de hilos dentro de un mismo cluster. Los bloques pertenecientes a este cluster pueden acceder a la memoria compartida de otros bloques mediante un espacio denominado \textit{Distributed Shared Memory} (DSM). Esto permite realizar lecturas, escrituras y operaciones atómicas sobre la memoria compartida de bloques que pueden estar ejecutándose en distintos Streaming Multiprocessors, evitando en determinados algoritmos la necesidad de utilizar memoria global como mecanismo intermedio de comunicación. Aunque este acceso resulta considerablemente más eficiente que intercambiar los datos a través de memoria global, acceder a la memoria compartida de otro SM presenta una latencia superior a la de la memoria compartida local.
+
+\item \textbf{MBarrier.}
+Las \textit{mbarriers} constituyen un mecanismo de sincronización especialmente útil para implementar pipelines productor-consumidor junto con operaciones asíncronas como TMA. Una barrera se inicializa indicando el número esperado de participantes. Los hilos notifican su llegada a la barrera y, en el caso de operaciones asíncronas, también puede asociarse a ella una cantidad de datos pendientes de transferir. La fase de la barrera se considera completada únicamente cuando se han producido las llegadas esperadas y han finalizado todas las transacciones asociadas.
+
+Este mecanismo permite implementar de forma eficiente esquemas de \textit{multibuffering}. Por ejemplo, cada buffer puede disponer de una barrera que indique que contiene datos listos para ser consumidos y otra que indique que puede volver a ser utilizado por el productor. Antes de leer un buffer, el consumidor espera a que finalice su barrera de datos disponibles; una vez procesados los datos, señala que el buffer puede reutilizarse. De forma análoga, el productor espera a que el buffer esté libre antes de iniciar una nueva transferencia. De este modo, movimiento de datos y cómputo pueden solaparse sin necesidad de sincronizar globalmente todos los warps.
+
+\item \textbf{Tensor Cores de quinta generación (TCGen05).}
+Blackwell introduce una nueva generación de Tensor Cores accesible mediante las instrucciones \texttt{tcgen05}. A diferencia de las instrucciones MMA utilizadas en Ampere, estas operaciones están diseñadas para trabajar conjuntamente con Tensor Memory y memoria compartida. Los acumuladores se almacenan directamente en Tensor Memory, mientras que los operandos pueden obtenerse de memoria compartida y, en determinadas variantes, también de Tensor Memory. Esto permite realizar operaciones matriciales de mayores dimensiones sin mantener los acumuladores en el fichero general de registros, reduciendo así la presión sobre estos. Además, incorporan soporte hardware para nuevos formatos numéricos y operaciones de \textit{block scaling}, permitiendo realizar productos matriciales de muy baja precisión de forma eficiente.
+
+\end{itemize}
+
+Estas características modifican considerablemente la forma en la que pueden estructurarse kernels de alto rendimiento con respecto a Ampere. En particular, permiten separar de forma más clara el movimiento de datos y el cómputo, reducir la presión sobre los registros y construir pipelines asíncronos en los que diferentes unidades hardware trabajan simultáneamente.
+
+\subsection{AMD Instinct (CDNA 3 y CDNA 4)}
+
+AMD desarrolla la familia de aceleradores Instinct, orientada específicamente a cargas de inteligencia artificial y computación de alto rendimiento (HPC). Las generaciones recientes se basan en las arquitecturas CDNA 3 y CDNA 4, cuya organización y características se describen en la documentación oficial de AMD \cite{amdCDNA}. Aunque su modelo de programación presenta ciertas similitudes con el de las GPU de NVIDIA, existen diferencias relevantes tanto en la organización del hardware como en las instrucciones disponibles.
+
+AMD no constituye el foco principal de este trabajo, por lo que su arquitectura no se analiza en profundidad. No obstante, se incluye dentro del estado del arte debido a su relevancia actual en el ámbito de los aceleradores para inteligencia artificial y como posible línea de trabajo futura. Por este motivo, las descripciones que se presentan a continuación tienen un carácter introductorio y superficial.
+
+\begin{itemize}
+
+\item \textbf{Wavefronts y Compute Units.}
+Mientras que las arquitecturas NVIDIA agrupan los hilos en warps de 32 hilos que se ejecutan sobre un Streaming Multiprocessor, las arquitecturas CDNA emplean \textit{wavefronts} de 64 hilos y organizan el hardware en \textit{Compute Units} (CU). Todos los hilos de un wavefront ejecutan una misma secuencia de instrucciones, de forma análoga al modelo SIMT utilizado por NVIDIA.
+
+\item \textbf{LDS y registros.}
+El equivalente aproximado de la memoria compartida de CUDA es el \textit{Local Data Share} (LDS), una memoria gestionada explícitamente por software y compartida por los wavefronts pertenecientes a un mismo workgroup. AMD distingue además entre registros escalares (SGPR), utilizados para valores comunes al wavefront, y registros vectoriales (VGPR), que almacenan valores diferentes para cada hilo. Esta separación refleja de forma explícita la distinción entre operaciones uniformes y vectoriales de la arquitectura.
+
+\item \textbf{Matrix Cores y MFMA.}
+Las arquitecturas CDNA incorporan unidades especializadas para operaciones matriciales, denominadas Matrix Cores. Estas unidades se utilizan mediante instrucciones \textit{Matrix Fused Multiply-Add} (MFMA), que realizan productos y acumulaciones matriciales de forma cooperativa entre todos los hilos de un wavefront. Estas instrucciones desempeñan un papel similar a las instrucciones MMA de las GPU NVIDIA. En CDNA 4 se amplía considerablemente su rendimiento y se incorpora soporte nativo para formatos numéricos de baja precisión utilizados en inteligencia artificial.
+
+\item \textbf{Formatos de baja precisión.}
+CDNA 4 incorpora soporte para formatos como FP8, MXFP8, MXFP6 y MXFP4, además de operaciones con \textit{sparsity}. El uso de estas representaciones permite reducir el volumen de datos transferido y aumentar el rendimiento de los Matrix Cores, resultando especialmente interesante para el entrenamiento y la inferencia de modelos de gran tamaño.
+
+\item \textbf{Arquitectura basada en chiplets.}
+Los aceleradores Instinct modernos están construidos utilizando múltiples \textit{Accelerator Complex Dies} (XCD) interconectados mediante AMD Infinity Fabric. Por ejemplo, la MI300X integra hasta ocho XCD junto con memoria HBM3. Esta organización permite construir aceleradores de gran tamaño sin necesidad de fabricar toda la GPU como un único dado monolítico.
+
+Este enfoque basado en \textit{chiplets}, utilizado también por AMD en sus procesadores Ryzen, permite ensamblar dispositivos de gran tamaño a partir de varios dados de menor superficie. Esto puede mejorar el rendimiento de fabricación, ya que un defecto localizado afecta únicamente a uno de los chiplets y no necesariamente al dispositivo completo. Como contrapartida, la comunicación entre chiplets introduce una latencia y un coste energético superiores a los de la comunicación dentro de un mismo dado, por lo que el diseño de la interconexión resulta especialmente importante para mantener un elevado rendimiento.
+
+\item \textbf{Memoria HBM.}
+Una de las principales características de los aceleradores Instinct es su elevada capacidad y ancho de banda de memoria. La MI300X dispone de 192 GB de HBM3 con un ancho de banda máximo de 5,3 TB/s, mientras que la serie MI350 aumenta estas cifras hasta 288 GB de HBM3E y 8 TB/s. Esta elevada capacidad resulta especialmente relevante en modelos de lenguaje de gran tamaño, donde el almacenamiento de los pesos y la reducción del tráfico entre dispositivos pueden condicionar considerablemente el rendimiento.
+
+AMD ha destacado especialmente por ofrecer una gran capacidad de memoria HBM por acelerador. Como referencia, una NVIDIA B200 dispone de 180 GB de HBM3E, frente a los 192 GB de la MI300X. Sin embargo, con Blackwell Ultra esta diferencia se reduce, ya que la B300 alcanza también los 288 GB de HBM3E de la MI350X. Por tanto, aunque AMD ha mantenido tradicionalmente una ventaja en capacidad de memoria en algunas generaciones, las propuestas más recientes de ambos fabricantes presentan cifras muy similares en este aspecto.
+
+\item \textbf{ROCm y HIP.}
+El ecosistema software equivalente a CUDA en AMD se denomina ROCm. Dentro de este, HIP proporciona un modelo de programación C++ similar a CUDA que permite desarrollar kernels para GPU AMD. ROCm incluye además compiladores basados en LLVM, bibliotecas optimizadas para operaciones matriciales y primitivas utilizadas habitualmente en aprendizaje automático.
+
+\end{itemize}
+
+\subsection{Tenstorrent}
+\label{subsec:tenstorrent}
+
+Tenstorrent desarrolla aceleradores específicos para inteligencia artificial basados en núcleos Tensix, que combinan unidades de cómputo matricial con procesadores RISC-V programables. Su modelo de programación está orientado a controlar de forma explícita tanto el movimiento de datos como el cómputo. \cite{tenstorrentMetal}
+
+Las tarjetas Blackhole integran 120 núcleos Tensix, alcanzan hasta 664 TFLOPS en formatos de baja precisión y disponen de 180 MB de SRAM distribuida junto a las unidades de cómputo. Esta cantidad de SRAM es elevada en comparación con una GPU convencional, aunque su memoria externa es mucho más limitada: hasta 32 GB de GDDR6 y unos 512 GB/s.
+
+Tenstorrent también destaca por ofrecer tarjetas con un precio de entrada considerablemente inferior al de los aceleradores de datacenter de NVIDIA y AMD. A cambio, sus prestaciones, capacidad de memoria externa y ecosistema software son también más reducidos.
+
+\begin{itemize}
+
+\item \textbf{Tensix Cores.}
+Los aceleradores Blackhole actuales integran 120 núcleos Tensix. Cada uno de ellos combina unidades de cómputo matricial, procesadores RISC-V y memoria SRAM local, siguiendo una organización diferente a la de las GPU tradicionales.
+
+\item \textbf{Capacidad de cómputo.}
+Las tarjetas Blackhole alcanzan hasta 664 TFLOPS utilizando el formato \textit{Block FP8}, estando orientadas principalmente a operaciones matriciales de baja precisión utilizadas en modelos de inteligencia artificial.
+
+\item \textbf{SRAM.}
+Cada chip Blackhole dispone de 180 MB de SRAM, aproximadamente 1,5 MB por núcleo Tensix. Esta memoria actúa como un \textit{scratchpad} gestionado explícitamente y permite mantener datos próximos a las unidades de cómputo, reduciendo el tráfico hacia memoria externa.
+
+\item \textbf{Memoria externa e interconexión.}
+Las tarjetas Blackhole incorporan hasta 32 GB de memoria GDDR6 y alcanzan aproximadamente 512 GB/s de ancho de banda. Determinados modelos incluyen además enlaces dedicados para conectar varios aceleradores entre sí, permitiendo construir sistemas con un mayor número de núcleos y memoria agregada.
+
+\end{itemize}
+
+\subsection{Cell Broadband Engine}
+
+Como contexto histórico, resulta interesante mencionar el \textit{Cell Broadband Engine}, desarrollado conjuntamente por IBM, Sony y Toshiba a mediados de la década de 2000. Aunque se trata de una arquitectura con más de veinte años de antigüedad, presenta numerosas similitudes con técnicas utilizadas actualmente en GPU y aceleradores especializados. \cite{cellBE}
+
+El procesador combinaba un núcleo de propósito general, denominado \textit{Power Processing Element} (PPE), con ocho \textit{Synergistic Processing Elements} (SPE) orientados al cálculo vectorial. Algunas de sus características más destacables son:
+
+\begin{itemize}
+
+\item \textbf{Memoria SRAM local.}
+Cada SPE disponía de 256 KB de memoria SRAM local, denominada \textit{Local Store}. Tanto las instrucciones como los datos utilizados por el SPE debían encontrarse en esta memoria, que era gestionada explícitamente por software. Este diseño presenta similitudes con el uso de memorias SRAM gestionadas explícitamente en las GPU actuales, como la memoria compartida de los Streaming Multiprocessors. La principal diferencia frente a una caché convencional es que el programador decide explícitamente qué datos se encuentran almacenados en ella.
+
+\item \textbf{Transferencias entre SPE.}
+Los motores DMA no estaban limitados a realizar transferencias entre memoria principal y la memoria local de un SPE. También era posible transferir datos directamente entre los \textit{Local Stores} de diferentes SPE. Esta posibilidad permitía comunicar directamente distintas unidades de cómputo sin utilizar la memoria principal como almacenamiento intermedio, una idea que recuerda a mecanismos modernos de comunicación entre unidades de procesamiento, como la \textit{Distributed Shared Memory} disponible en arquitecturas NVIDIA recientes.
+
+\item \textbf{DMA asíncrono y double buffering.}
+Cada SPE disponía de un \textit{Memory Flow Controller} capaz de ejecutar transferencias DMA de manera asíncrona y en paralelo con el procesador. Esto permitía utilizar técnicas de \textit{double buffering}: mientras el SPE procesaba los datos almacenados en un buffer, el motor DMA podía cargar simultáneamente los datos necesarios para la siguiente iteración en un segundo buffer. Al terminar el cálculo, los buffers intercambiaban sus funciones. Este mecanismo permitía ocultar parcialmente la latencia de memoria mediante el solapamiento entre transferencia y cómputo.
+
+\item \textbf{Eventos asociados a las transferencias.}
+Las operaciones DMA podían agruparse mediante identificadores o \textit{tags}, permitiendo comprobar o esperar de forma conjunta a su finalización. El \textit{Memory Flow Controller} podía además generar eventos cuando se actualizaba el estado de estos grupos de transferencias, eventos que podían ser tratados por el SPE mediante su mecanismo de eventos e interrupciones. De esta forma, no era necesario estructurar todo el programa como una espera activa continua sobre las transferencias de memoria.
+
+\end{itemize}
+
+Resulta especialmente llamativo que un procesador diseñado alrededor de 2005 incorporase mecanismos tan similares a los empleados en aceleradores actuales. El uso de SRAM gestionada explícitamente, transferencias asíncronas, comunicación directa entre unidades de cómputo y técnicas de \textit{double buffering} aparecen de nuevo, con implementaciones más sofisticadas, en arquitecturas modernas como NVIDIA Hopper y Blackwell. El Cell Broadband Engine constituye, por tanto, un ejemplo histórico de cómo muchas de las técnicas utilizadas actualmente para maximizar el rendimiento no son conceptos nuevos, sino evoluciones de ideas presentes desde hace décadas.
+
+\section{Conceptos básicos: GPU}
+Los conceptos de modelo de ejecución, jerarquía de memoria, sincronización y memoria compartida utilizados en esta sección siguen la documentación oficial de CUDA \cite{cudaProgrammingGuide}.
+
+
+En esta sección se describen algunos de los conceptos e instrucciones de la arquitectura NVIDIA Ampere que resultan fundamentales para comprender la implementación CUDA desarrollada en este trabajo. Se incluyen únicamente los mecanismos que intervienen directamente en el kernel y en la interpretación posterior de los perfiles.
+
+La sección no pretende constituir un manual completo de programación de GPU. Se presuponen conocimientos básicos de arquitectura de computadores, programación paralela y funcionamiento general de las GPU. El objetivo es únicamente introducir aquellos conceptos necesarios para facilitar la lectura y comprensión del código CUDA presentado posteriormente.
+
+\subsection{Doble buffer}
+
+El \textit{double buffering} es una técnica utilizada para solapar la producción y el consumo de datos. La idea consiste en disponer de dos buffers que se utilizan de forma alterna:
+
+\begin{enumerate}
+\item El productor comienza a rellenar los buffers.
+\item Cuando uno de ellos contiene los datos necesarios, el consumidor comienza a procesarlo mientras el productor continúa preparando el siguiente buffer.
+\item Una vez finalizado el consumo del primer buffer, los roles se intercambian y el proceso se repite.
+\end{enumerate}
+
+El objetivo es evitar que el consumidor tenga que esperar a que finalice una transferencia de memoria antes de comenzar el siguiente cálculo. Si el productor es suficientemente rápido como para preparar el siguiente buffer antes de que el consumidor termine de procesar el actual, el coste de transferencia puede quedar parcialmente o incluso completamente oculto por el cómputo.
+
+Por el contrario, si la producción de datos es más lenta que su consumo, el consumidor acabará alcanzando al productor y tendrá que esperar a que el siguiente buffer esté disponible. En el caso opuesto, si el consumidor es considerablemente más lento, será el productor quien termine esperando a que quede libre un buffer antes de poder reutilizarlo. En ambos casos disminuye el grado de solapamiento entre producción y consumo.
+
+\subsubsection{Multibuffering}
+
+El \textit{multibuffering} generaliza la técnica de doble buffer utilizando más de dos buffers en rotación. Su objetivo es aumentar la distancia entre el productor y el consumidor, de forma que el consumidor disponga de varios bloques de datos preparados antes de necesitarlos.
+
+Esta técnica resulta especialmente útil en GPU, donde numerosos warps pueden iniciar transferencias de memoria de forma simultánea y competir por el ancho de banda disponible. En un escenario desfavorable, si cada warp solicita bloques de gran tamaño, una transferencia individual puede ocupar durante más tiempo los recursos del subsistema de memoria, incrementando la latencia experimentada por el resto de solicitudes.
+
+Reducir el tamaño de los buffers permite dividir el tráfico en transferencias de menor granularidad, favoreciendo que un mayor número de solicitudes procedentes de distintos warps puedan avanzar de forma intercalada a través de la tubería de memoria. Si esta reducción se combina con un mayor número de buffers, es posible mantener varias transferencias en vuelo y proporcionar un mayor margen para ocultar las variaciones de latencia antes de que el consumidor alcance al productor.
+
+Sin embargo, aumentar el número de buffers o reducir excesivamente su tamaño también introduce costes. Un mayor número de buffers incrementa el consumo de memoria local, mientras que buffers más pequeños requieren más transferencias y más puntos de sincronización. Por tanto, la elección del número y tamaño de los buffers constituye un compromiso entre latencia, ancho de banda, utilización de memoria y coste de sincronización.
+
+Debido a la dificultad de obtener una solución óptima de forma analítica, en la práctica suele evaluarse experimentalmente un conjunto de configuraciones y seleccionar aquella que ofrece el mejor rendimiento para el dispositivo y la carga de trabajo considerados.
+
+\subsection{cp.async.cg.16}
+La instrucción \texttt{cp.async} permite iniciar una copia asíncrona desde memoria global hacia memoria compartida \cite{nvidiaPTX}. El hilo que emite la instrucción puede continuar ejecutando otras instrucciones antes de que la transferencia haya finalizado, siendo necesario sincronizar posteriormente antes de consumir los datos copiados.
+
+Una de sus principales ventajas frente a una secuencia convencional de carga y almacenamiento es que permite trasladar los datos directamente desde memoria global a memoria compartida, evitando utilizar el fichero de registros como almacenamiento intermedio. La variante \texttt{cp.async.cg.16} utilizada en este trabajo copia 16 bytes por instrucción y evita la caché L1, manteniendo los accesos cacheables en L2.
+
+Aunque cada instrucción copie únicamente 16 bytes, sigue siendo importante que los accesos realizados por los hilos de un warp sean contiguos y estén correctamente alineados. La caché L2 se organiza en líneas de 128 bytes, subdivididas en sectores de 32 bytes. Cuando los accesos de los hilos son contiguos, varias solicitudes pueden ser atendidas utilizando pocos sectores pertenecientes a las mismas líneas de caché. Por el contrario, un patrón disperso puede obligar a acceder a un número mucho mayor de sectores y líneas, incrementando el tráfico de memoria.
+
+En el peor caso, si numerosos hilos acceden simultáneamente a posiciones no contiguas, pueden introducirse en L2 muchas líneas distintas para satisfacer una pequeña cantidad de datos útiles de cada una. Esta presión adicional sobre la caché puede provocar la expulsión de líneas que todavía podrían reutilizarse. Como consecuencia, un acceso posterior a los siguientes 16 bytes contiguos puede encontrarse con que la información correspondiente ya no reside en L2 y debe recuperarse nuevamente desde niveles inferiores de la jerarquía de memoria.
+
+Por este motivo, el uso de \texttt{cp.async} no elimina la necesidad de realizar accesos coalescentes. La instrucción optimiza el camino entre memoria global y memoria compartida y facilita el solapamiento entre transferencia y cómputo, pero el patrón de acceso de los hilos continúa siendo determinante para utilizar eficientemente el ancho de banda disponible.
+
+En el kernel cuda, cp.async se utiliza para el multibuffer de K/V.
+
+\subsection{\texttt{ldmatrix.x4} y \texttt{ldmatrix.x4.trans}}
+
+La instrucción \texttt{ldmatrix} permite cargar de forma cooperativa matrices desde memoria compartida directamente a los registros de un warp \cite{nvidiaPTX}. Está diseñada principalmente para preparar los operandos que posteriormente serán utilizados por las instrucciones MMA de los Tensor Cores.
+
+En este trabajo se utilizan matrices de \(8\times8\) elementos de 16 bits. Como cada registro tiene un tamaño de 32 bits, cada registro recibido por un thread contiene dos elementos BF16 consecutivos. La carga se realiza cooperativamente entre los 32 threads del warp, de forma que cada grupo de threads proporciona las direcciones necesarias para recuperar las diferentes filas de las matrices.
+
+El modificador \texttt{x4} permite cargar cuatro matrices \(8\times8\) mediante una única instrucción. En el kernel desarrollado, las direcciones se preparan de manera que estas cuatro matrices corresponden a los cuatro subtiles de un tile lógico de \(16\times16\). El orden de carga puede visualizarse como un recorrido en forma de ``Z'': primero se recorren las dos mitades verticales correspondientes a las primeras ocho columnas y, posteriormente, las correspondientes a las ocho columnas siguientes:
+
+\begin{verbatim}
+matrix 0 -> rows  0..7,  columns  0..7
+matrix 1 -> rows  8..15, columns  0..7
+matrix 2 -> rows  0..7,  columns  8..15
+matrix 3 -> rows  8..15, columns  8..15
+\end{verbatim}
+
+Es decir, primero se carga la parte superior izquierda del tile, después la parte inferior izquierda, a continuación la parte superior derecha y finalmente la parte inferior derecha. Esta disposición resulta especialmente importante, ya que los cuatro registros devueltos por \texttt{ldmatrix.x4} no representan directamente dos matrices \(16\times8\), sino cuatro fragmentos \(8\times8\) que deben reagruparse posteriormente de acuerdo con el operando requerido por la instrucción MMA.
+
+Los threads 0--7 proporcionan las direcciones de las ocho filas de la primera matriz, los threads 8--15 las correspondientes a la segunda, los threads 16--23 las de la tercera y los threads 24--31 las de la cuarta. Como resultado, cada thread recibe cuatro registros de 32 bits, uno correspondiente a cada una de las cuatro matrices \(8\times8\).
+
+La variante \texttt{ldmatrix.x4.trans} utiliza el mismo mecanismo de carga cooperativa y conserva el mismo orden de las cuatro matrices, pero reorganiza internamente los elementos de cada matriz de forma transpuesta al almacenarlos en los registros. De esta forma, los datos no necesitan encontrarse físicamente transpuestos en memoria compartida: la propia instrucción realiza esta transformación durante la carga.
+
+Esta diferencia resulta especialmente útil al preparar los operandos para las instrucciones MMA. En el kernel CUDA desarrollado, \texttt{ldmatrix.x4} se utiliza durante la carga de los fragmentos de \(K\), mientras que \texttt{ldmatrix.x4.trans} se emplea para los fragmentos de \(V\). En ambos casos, los registros obtenidos deben organizarse teniendo en cuenta la disposición concreta que espera posteriormente la instrucción matricial.
+
+El uso de \texttt{ldmatrix} evita implementar manualmente numerosas cargas y operaciones de intercambio entre threads. Como contrapartida, obliga a conocer con precisión la distribución de los elementos entre los lanes del warp y el orden en el que los cuatro subtiles son depositados en los registros, ya que un error en este mapeo modifica directamente la matriz que finalmente procesan los Tensor Cores.
+
+\subsection{Swizzling en memoria compartida}
+
+La memoria compartida de una GPU NVIDIA se encuentra dividida en bancos que pueden ser accedidos en paralelo; para las arquitecturas tratadas, la documentación CUDA describe la organización y los patrones que originan conflictos \cite{cudaProgrammingGuide}. Palabras consecutivas de 32 bits se distribuyen entre bancos consecutivos. Cuando varios threads de un warp necesitan acceder simultáneamente a direcciones diferentes pertenecientes al mismo banco, el acceso debe dividirse en varias transacciones, reduciendo el ancho de banda efectivo.
+
+Este problema resulta especialmente relevante al trabajar con matrices. Aunque una matriz se almacene de forma contigua, el patrón utilizado posteriormente para consumirla puede hacer que numerosos threads accedan simultáneamente a posiciones que terminan perteneciendo a los mismos bancos.
+
+Para evitarlo, el kernel modifica deliberadamente la disposición de los datos al almacenarlos en memoria compartida mediante una técnica denominada \textit{swizzling}. Los datos conservan su organización lógica, pero su posición física dentro de la memoria compartida cambia en función de la fila.
+
+En este trabajo, cada fila de 128 elementos BF16 ocupa 256 bytes y se divide en bloques de 16 bytes, coincidiendo con el tamaño utilizado por las instrucciones \texttt{cp.async.cg.16}. El índice físico de cada uno de estos bloques se calcula mediante:
+
+\begin{verbatim}
+swizzled_chunk = logical_chunk ^ (row & 0x7)
+\end{verbatim}
+
+De esta forma, cada fila aplica una permutación diferente sobre los bloques de 16 bytes. Por ejemplo, para los primeros ocho bloques:
+
+\begin{verbatim}
+row 0: 0 1 2 3 4 5 6 7
+row 1: 1 0 3 2 5 4 7 6
+row 2: 2 3 0 1 6 7 4 5
+row 3: 3 2 1 0 7 6 5 4
+...
+row 7: 7 6 5 4 3 2 1 0
+\end{verbatim}
+
+El operador XOR no modifica qué datos contiene cada fila, sino únicamente dónde se almacenan físicamente dentro de ella. Para recuperar posteriormente un elemento se debe aplicar el mismo patrón de transformación al calcular su dirección.
+
+Esta reorganización es especialmente útil debido al tamaño de los bloques utilizados. Cada fragmento de 16 bytes ocupa cuatro bancos consecutivos de memoria compartida. Sin \textit{swizzling}, una fila de 256 bytes tiene un stride que vuelve a situar los mismos chunks sobre los mismos grupos de bancos en filas sucesivas. Por tanto, ciertos patrones de carga matricial pueden hacer que varios threads intenten acceder simultáneamente a los mismos bancos.
+
+Al aplicar el XOR con el índice de fila, cada fila desplaza de forma diferente los grupos de cuatro bancos utilizados por sus chunks. De esta forma, accesos que anteriormente convergían sobre los mismos bancos quedan distribuidos entre distintos grupos, reduciendo o eliminando los \textit{bank conflicts}.
+
+El \textit{swizzling} se aplica únicamente a la representación de los datos en memoria compartida. Los accesos a memoria global continúan realizándose de forma contigua y coalescente; es la dirección de destino de cada \texttt{cp.async} la que se modifica antes de escribir el fragmento en memoria compartida. Esto permite mantener un patrón eficiente de acceso a memoria global y, al mismo tiempo, adaptar la representación interna a los patrones de acceso requeridos posteriormente por \texttt{ldmatrix} y las instrucciones MMA.
+
+El patrón de \textit{swizzling} constituye, por tanto, una transformación de la disposición física de la matriz cuyo objetivo no es modificar los datos, sino hacer coincidir su organización en memoria compartida con la arquitectura de bancos del hardware y con el patrón de acceso utilizado durante el cálculo.
+
+\subsection{\texttt{mma.sync.aligned.m16n8k16}}
+
+La instrucción \texttt{mma.sync} permite ejecutar una operación de multiplicación y acumulación matricial utilizando los Tensor Cores de la GPU. La operación realizada puede expresarse como: \cite{nvidiaPTX}
+
+$$
+D = A \times B + C
+$$
+
+En el kernel desarrollado se utiliza concretamente la variante:
+
+\begin{verbatim}
+mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32
+\end{verbatim}
+
+La especificación \texttt{m16n8k16} determina las dimensiones de las matrices involucradas en la operación. En este caso:
+
+$$
+A_{16\times16} \times B_{16\times8} + C_{16\times8}
+\rightarrow D_{16\times8}
+$$
+
+Por tanto, una única instrucción realiza el producto de un fragmento de \(16\times16\) por otro de \(16\times8\), acumulando el resultado sobre una matriz de \(16\times8\). Esto equivale a realizar \(16\times8\times16=2048\) multiplicaciones junto con sus correspondientes acumulaciones.
+
+La operación es cooperativa a nivel de warp. Los 32 threads participan conjuntamente en una misma instrucción MMA y cada uno proporciona únicamente una fracción de los operandos almacenada en sus registros. De forma equivalente, el resultado de la operación queda distribuido entre los registros de todos los threads del warp. Ningún thread contiene individualmente las matrices completas.
+
+Los modificadores \texttt{row.col} indican la disposición lógica de los operandos: la matriz \(A\) se interpreta en formato \textit{row-major}, mientras que \(B\) se interpreta en formato \textit{column-major}. Esta disposición es la que determina cómo deben organizarse previamente los fragmentos cargados mediante \texttt{ldmatrix}.
+
+Los tipos:
+
+\begin{verbatim}
+f32.bf16.bf16.f32
+\end{verbatim}
+
+indican que los operandos \(A\) y \(B\) utilizan formato BF16, mientras que la acumulación y el resultado se realizan en FP32. De esta forma se aprovecha el mayor rendimiento proporcionado por los Tensor Cores para formatos de menor precisión, manteniendo una mayor precisión durante la acumulación.
+
+El modificador \texttt{sync} indica que se trata de una operación cooperativa y síncrona a nivel de warp: los threads participantes ejecutan conjuntamente la misma operación antes de continuar. Por su parte, \texttt{aligned} establece que todos los threads del warp deben alcanzar la instrucción de forma convergente; no hace referencia al alineamiento de las direcciones de memoria.
+
+En FlashAttention, esta instrucción constituye el núcleo del cálculo matricial. Se utiliza primero para calcular los fragmentos de \(QK^T\) y, posteriormente, para multiplicar las probabilidades obtenidas tras el softmax por los fragmentos de \(V\). Debido a que los Tensor Cores operan sobre tiles de dimensiones fijas, las matrices de mayor tamaño se procesan como una sucesión de estas operaciones \texttt{m16n8k16}.
+
+\section{Herramientas}
+
+En esta sección se presentan las principales herramientas, lenguajes y bibliotecas utilizadas durante el desarrollo, compilación, verificación y análisis de rendimiento del proyecto.
+
+\subsection{C++20}
+
+El proyecto requiere un compilador compatible con el estándar C++20. Una de las características utilizadas es \texttt{std::bit\_cast}, empleada para representar como un \texttt{uint32\_t} el patrón de bits correspondiente al factor de escala utilizado en el cálculo de la atención.
+
+El motivo de esta implementación es que los parámetros \textit{non-type template} utilizados en el proyecto no pueden representarse directamente mediante valores en coma flotante. Mediante \texttt{std::bit\_cast} es posible reinterpretar los 32 bits de un \texttt{float} como un \texttt{uint32\_t} sin realizar ninguna conversión numérica. De esta forma, el valor puede utilizarse durante la instanciación del template y, posteriormente, reinterpretarse de nuevo como \texttt{float} dentro del kernel. A diferencia de una conversión convencional a entero, este procedimiento conserva exactamente la representación binaria original del número en coma flotante.
+
+\subsection{CUDA Toolkit 13.0}
+
+La versión utilizada durante el desarrollo ha sido CUDA Toolkit 13.0. Este entorno proporciona las herramientas necesarias para compilar y ejecutar código CUDA sobre GPU NVIDIA.
+
+La herramienta principal utilizada es \texttt{nvcc}, el compilador de NVIDIA para código CUDA/C++. Además, el toolkit proporciona las cabeceras, bibliotecas y utilidades necesarias para utilizar la API de CUDA y las instrucciones específicas de la arquitectura objetivo.
+
+Durante el desarrollo también se estudió el uso de \textit{shared-memory register spilling}, que permite utilizar memoria compartida como destino para determinados registros derramados en lugar de recurrir directamente a memoria global. Finalmente, esta característica no se utilizó en la implementación final. Solo es compatible con cuda 13.0+
+
+\subsection{clangd}
+
+\texttt{clangd} ha sido utilizado como servidor LSP durante el desarrollo del código C++ y CUDA. Proporciona funcionalidades como autocompletado, navegación entre símbolos, detección de errores y acceso a información sobre tipos y funciones directamente desde el editor.
+
+\subsection{clang-format}
+
+\texttt{clang-format} se ha utilizado para mantener un formato consistente en el código C++ y CUDA del proyecto, automatizando aspectos como la indentación, los espacios y la disposición de las diferentes construcciones del lenguaje.
+
+\subsection{CMake}
+
+CMake se utiliza para configurar y gestionar el proceso de compilación del proyecto. Mediante este se compila la extensión nativa utilizada desde PyTorch y los tests desarrollados para comprobar las utilidades implementadas en CUDA y C++. El repositorio incluye un fichero de presets para que la configuración habitual no dependa de introducir manualmente todos los parámetros en cada compilación.
+
+El preset utilizado durante el desarrollo se denomina \texttt{angel-wsl}. En él se especifican la arquitectura CUDA objetivo (Ampere, \texttt{sm\_80}) y las rutas de los compiladores. Estas rutas son necesariamente dependientes del sistema, por lo que el preset se proporciona como una configuración reproducible pero modificable por el usuario. Los productos de compilación se mantienen dentro de \texttt{build/}. El Anexo~\ref{anexo_instalacion} recoge los comandos necesarios para configurar y compilar el proyecto.
+
+\subsection{uv}
+
+\texttt{uv} se utiliza como gestor del entorno y de las dependencias de Python del proyecto. Permite gestionar de forma rápida y reproducible el entorno virtual, las dependencias y la ejecución de las diferentes herramientas escritas en Python.
+
+\subsection{pytest}
+
+\texttt{pytest} constituye el entorno principal de pruebas utilizado en la parte Python del proyecto. Se emplea para comprobar el correcto funcionamiento de la extensión C++/CUDA y para verificar la correctitud de las implementaciones realizadas con CUDA y Triton, así como de las llamadas utilizadas como referencia mediante PyTorch SDPA.
+
+\subsection{Nsight Compute}
+
+\texttt{Nsight Compute} se ha utilizado para analizar el rendimiento de las diferentes implementaciones \cite{nsightCompute}. La herramienta de línea de comandos \texttt{ncu} permite obtener métricas detalladas sobre la ejecución de los kernels, incluyendo ocupación, utilización de unidades de cómputo, tráfico de memoria, uso de registros y diferentes tipos de \textit{stalls}.
+
+Los resultados obtenidos pueden almacenarse en informes y visualizarse mediante \texttt{ncu-ui}, que proporciona una interfaz gráfica para analizar las métricas recogidas y comparar el comportamiento de distintos kernels.
+
+\subsection{PyTorch}
+
+PyTorch se utiliza tanto como referencia de correctitud como interfaz entre Python y la implementación CUDA. La ruta de atención se basa en \path{scaled_dot_product_attention} y en el selector explícito de backends \path{sdpa_kernel} \cite{pytorchSDPA}. La función \textit{Scaled Dot Product Attention} (SDPA) sirve como implementación de referencia frente a la que se comparan los resultados obtenidos con CUDA y Triton.
+
+Además, la implementación CUDA se expone a Python mediante una extensión nativa compatible con PyTorch. Esto permite pasar tensores almacenados directamente en la GPU a los kernels desarrollados en C++/CUDA sin necesidad de realizar copias adicionales de los datos.
+
+\subsection{Triton}
+
+Triton es un lenguaje y compilador orientado al desarrollo de kernels para GPU desde Python. Su mecanismo de \textit{autotuning} permite evaluar configuraciones alternativas para una clave determinada antes de reutilizar la configuración seleccionada \cite{tritonAutotune}. Su modelo de programación expresa operaciones sobre bloques de datos y permite parametrizar aspectos como los tamaños de tile, el número de warps y las etapas del pipeline.
+
+En este trabajo se utiliza para implementar una segunda versión de FlashAttention y comparar su complejidad de desarrollo, correctitud y rendimiento con la implementación realizada directamente en CUDA.
+
+\subsection{Ruff}
+
+\texttt{Ruff} se utiliza como herramienta de análisis estático y formato para el código Python del proyecto. Permite detectar errores comunes, problemas de estilo y construcciones innecesarias, manteniendo una base de código consistente con un coste reducido durante el desarrollo.
+
+\subsection{GoogleTest}
+
+GoogleTest se utiliza como framework de pruebas para el código C++ y CUDA. Mediante estas pruebas se comprueba el comportamiento de diferentes utilidades y componentes de bajo nivel de la implementación antes de integrarlos en el kernel completo.
+
+Su integración con CMake permite compilar y ejecutar las pruebas como parte del proceso normal de construcción del proyecto.
+
+\subsection{CTest}
+
+CTest se utiliza como capa de ejecución para los tests nativos registrados por CMake. De esta forma, las pruebas de C++/CUDA pueden ejecutarse independientemente de \texttt{pytest}, manteniendo separados los tests de bajo nivel de las pruebas de integración y rendimiento realizadas desde Python. Esta separación también permite comprobar la parte nativa antes de cargar la extensión desde PyTorch.
+
+
+\section{Trabajos relacionados}
+
+El principal trabajo relacionado con este proyecto es \textit{FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness} \cite{dao2022flashattention}. En este artículo se introduce FlashAttention como un algoritmo de atención exacta diseñado teniendo en cuenta explícitamente la jerarquía de memoria de las GPU. Su principal aportación consiste en dividir el cálculo en bloques que puedan procesarse utilizando la memoria SRAM disponible en la GPU, evitando materializar completamente la matriz de atención y reduciendo el número de transferencias realizadas hacia memoria global. Este planteamiento constituye la base algorítmica de las implementaciones desarrolladas en este trabajo.
+
+FlashAttention-2 mantiene la formulación exacta y el esquema por bloques, pero introduce cambios específicos de reparto de trabajo: reduce operaciones no matriciales, aumenta el paralelismo entre bloques incluso dentro de una misma cabeza y modifica la partición del trabajo entre \textit{warps} \cite{dao2023flashattention2}. Esta distinción es especialmente relevante para este TFG, ya que los resultados finales muestran que la granularidad y el reparto del trabajo son tan importantes como las optimizaciones locales del movimiento de datos.
+
+Además del artículo original, existen diferentes trabajos de carácter práctico centrados en la implementación y optimización de FlashAttention directamente sobre GPU. Entre ellos destaca \textit{Writing Speed-of-Light Flash Attention for 5090 in CUDA C++} \cite{gaunernstFlashAttention}, donde se desarrolla progresivamente un kernel de atención en CUDA C++. Partiendo de una implementación básica, se introducen sucesivamente optimizaciones como \textit{shared-memory swizzling}, \textit{pipelining} y el uso de \texttt{ldmatrix.x4}. Aunque el trabajo se ejecuta sobre una NVIDIA RTX 5090, las versiones estudiadas utilizan principalmente mecanismos ya disponibles desde Ampere, como \texttt{cp.async}, \texttt{ldmatrix} y \texttt{mma.sync}, por lo que constituye una referencia especialmente útil para la implementación desarrollada.
+
+Una aproximación similar aparece en la serie \textit{Flash Attention from Scratch} \cite{lubitschFlash}. Este trabajo desarrolla FlashAttention 2 desde cero sobre GPUs NVIDIA Ampere y aplica progresivamente diferentes técnicas de optimización, entre ellas \textit{swizzling}, carga anticipada de los bloques de \(K\) y \(V\), solapamiento entre transferencias y cómputo, \textit{double buffering} y optimizaciones a nivel de instrucciones. Resulta especialmente interesante la comparación realizada entre una RTX 3090 y una A100, donde una misma implementación puede presentar comportamientos considerablemente diferentes. Esto pone de manifiesto la dependencia existente entre las técnicas de optimización empleadas y las características concretas del dispositivo sobre el que se ejecuta el kernel.
+
+Gran parte de las técnicas utilizadas en kernels de atención optimizados proceden de las mismas estrategias empleadas en multiplicaciones matriciales de alto rendimiento. Una referencia importante en este ámbito es la documentación de CUTLASS sobre implementación eficiente de GEMM \cite{cutlassEfficientGemm}. CUTLASS organiza la multiplicación matricial mediante una jerarquía de tiles a nivel de bloque, warp e instrucción, buscando maximizar la reutilización de los datos en los distintos niveles de la jerarquía de memoria. También emplea \textit{software pipelining} y múltiples buffers para solapar el movimiento de datos con las operaciones matriciales.
+
+En esta misma línea, \textit{How To Write A Fast Matrix Multiplication From Scratch With Tensor Cores} \cite{armbrusterTensorCores} presenta el desarrollo progresivo de un kernel HGEMM utilizando directamente los Tensor Cores. El trabajo parte de una implementación basada en \textit{hierarchical tiling} y aplica sucesivamente técnicas como accesos vectorizados, eliminación de conflictos de bancos mediante \textit{swizzling}, ajuste de las dimensiones de los tiles y \textit{double buffering}. La implementación permite observar de forma práctica cómo el rendimiento de los Tensor Cores está estrechamente relacionado con la capacidad del kernel para alimentar continuamente estas unidades mediante una utilización eficiente de la jerarquía de memoria.
+
+Las dos referencias anteriores son especialmente relevantes para FlashAttention debido a que sus operaciones principales, \(QK^T\) y \(PV\), están formadas por multiplicaciones matriciales por bloques. Por tanto, técnicas desarrolladas originalmente para kernels GEMM, como el \textit{tiling}, la reutilización de datos, el \textit{swizzling} o el solapamiento entre transferencia y cómputo, pueden trasladarse directamente a la implementación de atención.
+
+
+Como referencia complementaria de programación GPU contemporánea se ha utilizado \textit{Modern GPU Programming For MLSys} \cite{mlcModernGPU}. El material presenta de forma progresiva el modelo de ejecución de GPU, disposición de datos, movimiento asíncrono, sincronización y construcción de kernels de alto rendimiento, incluyendo ejemplos de GEMM y FlashAttention. En este trabajo se emplea como referencia de contexto para relacionar las técnicas estudiadas en Ampere con enfoques de programación y planificación utilizados en arquitecturas más recientes.
+
+Finalmente, \textit{Programming Massively Parallel Processors: A Hands-on Approach} \cite{kirkHwuPMPP} se ha utilizado como referencia general para los conceptos relacionados con arquitectura GPU y programación CUDA. El libro presenta la jerarquía de memoria de las GPU, técnicas de optimización de accesos a memoria, multiplicación matricial y diferentes estrategias para incrementar la localidad y el paralelismo de los programas. Aunque no constituye un trabajo específico sobre FlashAttention, proporciona parte de la base conceptual necesaria para comprender las optimizaciones aplicadas en las implementaciones anteriores.
+
+\section{Contribuciones de este TFG}
+
+Las contribuciones de este trabajo no se resumen únicamente en una comparación temporal. Se ha desarrollado y validado una implementación propia de FlashAttention en CUDA, una implementación equivalente en Triton y un banco de pruebas común frente a SDPA y cuDNN. El kernel CUDA está especializado para la configuración estudiada, por lo que los resultados deben interpretarse dentro de ese alcance.
+
+La aportación experimental consiste en relacionar los tiempos medidos con métricas de NVIDIA Nsight Compute. De esta forma se puede distinguir entre optimizaciones locales que producen el efecto esperado —como eliminar accesos no coalescentes o conflictos de banco— y decisiones estructurales, como la granularidad de los CTAs o la reutilización de los tiles de \(K\) y \(V\), que terminan condicionando el rendimiento global.
+
+Además de los resultados de rendimiento, el trabajo aporta una implementación reproducible, un test funcional y tests temporales comunes y scripts para automatizar tanto el perfilado como la caracterización del entorno de ejecución.

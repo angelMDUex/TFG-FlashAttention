@@ -1,0 +1,15 @@
+\renewcommand{\keywords}[1]{\par\vspace{1em}{\itshape\bfseries Keywords -- }#1}
+
+\chapter*{Abstract}
+
+The attention mechanism is one of the fundamental components of Transformer architectures, but its computational cost grows quadratically with sequence length. FlashAttention reorganizes this computation to avoid fully materializing the attention matrix in global memory and to make more efficient use of the GPU memory hierarchy.
+
+This Bachelor's Thesis studies the implementation and optimization of FlashAttention on NVIDIA GPUs using two different levels of abstraction. On the one hand, a CUDA kernel is developed from scratch for Ampere architectures, explicitly using asynchronous transfers through \texttt{cp.async}, matrix loads with \texttt{ldmatrix}, Tensor Cores through \texttt{mma.sync} instructions, shared memory with \textit{swizzling}, and FP32 accumulation. On the other hand, an equivalent implementation is developed using Triton, delegating a significant part of the decisions related to work distribution and memory management to the compiler.
+
+Both implementations are compared against PyTorch's \path{scaled_dot_product_attention}, including its FlashAttention and cuDNN execution paths. The main evaluation is performed on an NVIDIA A100-SXM4-40GB using BF16 inputs, a head dimension of 128, batch size one, one attention head, and non-causal attention. Functional tests verify numerical correctness, while performance benchmarks cover increasing sequence lengths and NVIDIA Nsight Compute is used for detailed profiling.
+
+The results show that the CUDA implementation eliminates uncoalesced global memory accesses and shared-memory bank conflicts, avoids register spilling, and achieves lower register and shared-memory usage than several of the compared paths. However, these local optimizations do not directly translate into the best overall performance. The analysis reveals that work granularity and parallelization strategy have a decisive impact: the CUDA kernel processes a smaller query tile per CTA, which reduces the reuse of \(K\) and \(V\) and limits the amount of available parallelism for some sequence lengths. Triton and cuDNN achieve greater data reuse, whereas the SDPA profile exhibits a different execution organization and a larger number of launched blocks.
+
+For large sequence lengths, the CUDA implementation reaches approximately \(100\,\text{TFLOP/s}\), compared with around \(126\,\text{TFLOP/s}\) for Triton and higher values for SDPA and cuDNN. The results therefore show that GPU kernel optimization does not depend solely on minimizing memory accesses or resource usage, but on balancing data reuse, parallelism, occupancy, synchronization, and effective utilization of the computational units.
+
+\keywords{FlashAttention, CUDA, Triton, GPU, Tensor Cores, Ampere, optimization, Nsight Compute}

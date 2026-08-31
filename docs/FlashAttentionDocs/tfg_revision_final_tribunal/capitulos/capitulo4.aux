@@ -1,0 +1,87 @@
+\relax 
+\providecommand\hyper@newdestlabel[2]{}
+\@writefile{toc}{\contentsline {chapter}{\numberline {6}Análisis de los resultados}{45}{chapter.6}\protected@file@percent }
+\@writefile{lof}{\addvspace {10\p@ }}
+\@writefile{lot}{\addvspace {10\p@ }}
+\@writefile{toc}{\contentsline {section}{\numberline {6.1}Kernels observados en SDPA}{45}{section.6.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6.2}Registros y ocupación}{46}{section.6.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {6.1}{\ignorespaces Uso de registros por hilo para \(N=8192\).}}{46}{table.caption.10}\protected@file@percent }
+\newlabel{tab:register_usage}{{6.1}{46}{Uso de registros por hilo para \(N=8192\)}{table.caption.10}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {6.2}{\ignorespaces Ocupación teórica y alcanzada para \(N=8192\).}}{46}{table.caption.11}\protected@file@percent }
+\newlabel{tab:occupancy_results}{{6.2}{46}{Ocupación teórica y alcanzada para \(N=8192\)}{table.caption.11}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {6.1}{\ignorespaces Residencia permitida por recursos frente a trabajo disponible para el kernel CUDA.}}{47}{figure.caption.12}\protected@file@percent }
+\newlabel{fig:occupancy_grid}{{6.1}{47}{Residencia permitida por recursos frente a trabajo disponible para el kernel CUDA}{figure.caption.12}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {6.3}Memoria compartida y granularidad de lanzamiento}{47}{section.6.3}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {6.3}{\ignorespaces Memoria compartida y granularidad de lanzamiento para \(N=8192\).}}{47}{table.caption.13}\protected@file@percent }
+\newlabel{tab:launch_smem}{{6.3}{47}{Memoria compartida y granularidad de lanzamiento para \(N=8192\)}{table.caption.13}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {6.4}Conflictos de banco}{48}{section.6.4}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {6.4}{\ignorespaces Conflictos de banco observados en los kernels principales.}}{48}{table.caption.14}\protected@file@percent }
+\newlabel{tab:bank_conflicts}{{6.4}{48}{Conflictos de banco observados en los kernels principales}{table.caption.14}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {6.5}Coalescencia de los accesos globales}{48}{section.6.5}\protected@file@percent }
+\citation{cudnnAttention}
+\@writefile{lot}{\contentsline {table}{\numberline {6.5}{\ignorespaces Sectores globales reales, ideales y excesivos.}}{49}{table.caption.15}\protected@file@percent }
+\newlabel{tab:coalescing}{{6.5}{49}{Sectores globales reales, ideales y excesivos}{table.caption.15}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {6.6}Número total de sectores solicitados}{49}{section.6.6}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {6.6}{\ignorespaces Número total de sectores globales solicitados.}}{49}{table.caption.16}\protected@file@percent }
+\newlabel{tab:global_sectors}{{6.6}{49}{Número total de sectores globales solicitados}{table.caption.16}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {6.2}{\ignorespaces Interpretación conceptual de la reutilización de un tile de \(K,V\) sobre las filas de consultas procesadas por un CTA.}}{50}{figure.caption.17}\protected@file@percent }
+\newlabel{fig:reuse_kv}{{6.2}{50}{Interpretación conceptual de la reutilización de un tile de \(K,V\) sobre las filas de consultas procesadas por un CTA}{figure.caption.17}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {6.7}Actividad de Tensor Cores y jerarquía de memoria}{50}{section.6.7}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {6.7}{\ignorespaces Actividad aproximada del pipeline Tensor y señales de memoria para \(N=8192\).}}{51}{table.caption.18}\protected@file@percent }
+\newlabel{tab:tensor_activity}{{6.7}{51}{Actividad aproximada del pipeline Tensor y señales de memoria para \(N=8192\)}{table.caption.18}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {6.8}Mediciones temporales}{51}{section.6.8}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {6.8}{\ignorespaces Tiempo medio y desviación típica de CUDA y Triton (ms).}}{52}{table.caption.19}\protected@file@percent }
+\newlabel{tab:timings_cuda_triton}{{6.8}{52}{Tiempo medio y desviación típica de CUDA y Triton (ms)}{table.caption.19}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {6.9}{\ignorespaces Tiempo medio y desviación típica de SDPA y cuDNN (ms).}}{52}{table.caption.20}\protected@file@percent }
+\newlabel{tab:timings_sdpa_cudnn}{{6.9}{52}{Tiempo medio y desviación típica de SDPA y cuDNN (ms)}{table.caption.20}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {6.3}{\ignorespaces Tiempo medio de ejecución frente a longitud de secuencia, con eje vertical lineal.}}{53}{figure.caption.21}\protected@file@percent }
+\newlabel{fig:timing_lines}{{6.3}{53}{Tiempo medio de ejecución frente a longitud de secuencia, con eje vertical lineal}{figure.caption.21}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {6.9}Escalabilidad y throughput sostenido}{54}{section.6.9}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {6.10}{\ignorespaces Throughput aproximado en el régimen de secuencias grandes.}}{54}{table.caption.22}\protected@file@percent }
+\newlabel{tab:tflops_results}{{6.10}{54}{Throughput aproximado en el régimen de secuencias grandes}{table.caption.22}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {6.10}Lecciones aprendidas y posibles mejoras}{55}{section.6.10}\protected@file@percent }
+\@setckpt{capitulos/capitulo4}{
+\setcounter{page}{57}
+\setcounter{equation}{5}
+\setcounter{enumi}{5}
+\setcounter{enumii}{0}
+\setcounter{enumiii}{0}
+\setcounter{enumiv}{0}
+\setcounter{footnote}{0}
+\setcounter{mpfootnote}{0}
+\setcounter{part}{0}
+\setcounter{chapter}{6}
+\setcounter{section}{10}
+\setcounter{subsection}{0}
+\setcounter{subsubsection}{0}
+\setcounter{paragraph}{0}
+\setcounter{subparagraph}{0}
+\setcounter{figure}{3}
+\setcounter{table}{10}
+\setcounter{caption@flags}{2}
+\setcounter{continuedfloat}{0}
+\setcounter{parentequation}{0}
+\setcounter{float@type}{16}
+\setcounter{lastpagecount}{0}
+\setcounter{AM@survey}{0}
+\setcounter{r@tfl@t}{0}
+\setcounter{lstnumber}{1}
+\setcounter{section@level}{1}
+\setcounter{Item}{22}
+\setcounter{Hfootnote}{0}
+\setcounter{bookmark@seq@number}{62}
+\setcounter{@pps}{0}
+\setcounter{@ppsavesec}{0}
+\setcounter{@ppsaveapp}{0}
+\setcounter{algorithm}{3}
+\setcounter{ALG@line}{21}
+\setcounter{ALG@rem}{0}
+\setcounter{ALG@nested}{0}
+\setcounter{ALG@Lnr}{2}
+\setcounter{ALG@blocknr}{10}
+\setcounter{ALG@storecount}{0}
+\setcounter{ALG@tmpcounter}{0}
+\setcounter{subfigure}{0}
+\setcounter{subtable}{0}
+\setcounter{lstlisting}{0}
+}

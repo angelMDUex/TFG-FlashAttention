@@ -1,0 +1,22 @@
+\babel@toc {spanish}{}\relax 
+\addvspace {10\p@ }
+\addvspace {10\p@ }
+\addvspace {10\p@ }
+\addvspace {10\p@ }
+\contentsline {table}{\numberline {4.1}{\ignorespaces Características de la GPU utilizada durante los experimentos.}}{38}{table.caption.8}%
+\contentsline {table}{\numberline {4.2}{\ignorespaces Entorno software utilizado durante los experimentos.}}{39}{table.caption.9}%
+\addvspace {10\p@ }
+\addvspace {10\p@ }
+\contentsline {table}{\numberline {6.1}{\ignorespaces Uso de registros por hilo para \(N=8192\).}}{46}{table.caption.10}%
+\contentsline {table}{\numberline {6.2}{\ignorespaces Ocupación teórica y alcanzada para \(N=8192\).}}{46}{table.caption.11}%
+\contentsline {table}{\numberline {6.3}{\ignorespaces Memoria compartida y granularidad de lanzamiento para \(N=8192\).}}{47}{table.caption.13}%
+\contentsline {table}{\numberline {6.4}{\ignorespaces Conflictos de banco observados en los kernels principales.}}{48}{table.caption.14}%
+\contentsline {table}{\numberline {6.5}{\ignorespaces Sectores globales reales, ideales y excesivos.}}{49}{table.caption.15}%
+\contentsline {table}{\numberline {6.6}{\ignorespaces Número total de sectores globales solicitados.}}{49}{table.caption.16}%
+\contentsline {table}{\numberline {6.7}{\ignorespaces Actividad aproximada del pipeline Tensor y señales de memoria para \(N=8192\).}}{51}{table.caption.18}%
+\contentsline {table}{\numberline {6.8}{\ignorespaces Tiempo medio y desviación típica de CUDA y Triton (ms).}}{52}{table.caption.19}%
+\contentsline {table}{\numberline {6.9}{\ignorespaces Tiempo medio y desviación típica de SDPA y cuDNN (ms).}}{52}{table.caption.20}%
+\contentsline {table}{\numberline {6.10}{\ignorespaces Throughput aproximado en el régimen de secuencias grandes.}}{54}{table.caption.22}%
+\addvspace {10\p@ }
+\addvspace {10\p@ }
+\addvspace {10\p@ }

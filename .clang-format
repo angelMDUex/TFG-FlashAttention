@@ -1,0 +1,42 @@
+Language: Cpp
+BasedOnStyle: LLVM
+
+IndentWidth: 4
+ContinuationIndentWidth: 4
+TabWidth: 4
+UseTab: Never
+
+# C / Allman braces
+BreakBeforeBraces: Allman
+
+# Function parameters/arguments:
+# once multiline, put one on each line.
+BinPackParameters: false
+BinPackArguments: false
+
+AllowAllParametersOfDeclarationOnNextLine: false
+AllowAllArgumentsOnNextLine: false
+
+# Gives:
+#
+# foo(
+#     a,
+#     b
+# )
+#
+# on clang-format versions supporting BlockIndent.
+AlignAfterOpenBracket: BlockIndent
+
+AllowShortFunctionsOnASingleLine: None
+AllowShortBlocksOnASingleLine: Never
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+
+PointerAlignment: Right
+
+ColumnLimit: 100
+SortIncludes: Never
+
+SpaceBeforeParens: ControlStatements
+
+IndentPPDirectives: BeforeHash

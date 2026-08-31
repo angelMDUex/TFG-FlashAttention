@@ -1,0 +1,54 @@
+\chapter{Contexto complementario: mecanismo de atención y arquitectura GPT}\label{anexo_atencion}
+
+Este anexo amplía el contexto matemático y conceptual de la operación estudiada en la memoria. El cuerpo principal se centra en la implementación y el rendimiento del kernel de atención no causal. Aquí se explica con más detalle qué expresa la fórmula de la atención, por qué resulta útil y cómo se integra en una arquitectura GPT. La máscara causal se presenta únicamente como una variante empleada por los modelos autoregresivos; no forma parte de la configuración principal de los benchmarks de este trabajo.
+
+\section{Qué quiere decir la fórmula de la atención}
+
+La atención parte de una idea sencilla: para actualizar la representación de una posición de una secuencia, el modelo calcula qué otras posiciones contienen información útil. Para una única cabeza y sin máscara, la atención escalada producto punto se expresa como
+
+\begin{equation}
+O = \operatorname{softmax}\left(\frac{QK^{T}}{\sqrt{d}}\right)V,
+\label{eq:attn_appendix}
+\end{equation}
+
+donde \(Q\), \(K\) y \(V\) representan las matrices de consultas, claves y valores, respectivamente, y \(d\) es la dimensión de la cabeza.
+
+Antes de calcular la atención, la representación de cada token se proyecta a tres espacios distintos. Las consultas \(Q\) representan qué está buscando cada posición; las claves \(K\) representan qué tipo de información ofrece cada posición; y los valores \(V\) contienen la información que se transmitirá si una posición recibe peso de atención. Esta separación permite que una posición busque información en un espacio distinto de aquel en el que la ofrece.
+
+El producto \(QK^T\) compara cada consulta con todas las claves. Si se considera una consulta \(q_i\) y una clave \(k_j\), su producto escalar puede escribirse como
+
+\begin{equation}
+q_i\cdot k_j = \lVert q_i\rVert\,\lVert k_j\rVert\cos\theta.
+\end{equation}
+
+Esta identidad muestra la relación con la similitud coseno: cuando dos vectores apuntan en direcciones parecidas, el coseno del ángulo es alto y el producto escalar tiende a ser mayor. Sin embargo, la atención no calcula únicamente similitud semántica en el espacio original de \textit{embeddings}. Los tokens se transforman previamente mediante proyecciones entrenables, por lo que el producto escalar mide compatibilidad en espacios aprendidos de consulta y clave.
+
+La división por \(\sqrt{d}\) evita que las puntuaciones crezcan excesivamente al aumentar la dimensión de la cabeza. Sin este escalado, los valores de entrada al \textit{softmax} podrían presentar magnitudes elevadas y producir distribuciones demasiado concentradas. El escalado estabiliza la normalización y facilita el entrenamiento.
+
+El \textit{softmax} convierte las puntuaciones en pesos positivos que suman uno en cada fila. Posteriormente, esos pesos multiplican a \(V\). La salida de una posición es, por tanto, una combinación ponderada de los vectores de valor. Una posición con un peso alto influye de forma importante en la salida, mientras que una posición con un peso pequeño apenas contribuye.
+
+En atención causal se introduce además una matriz de máscara \(M\):
+
+\begin{equation}
+O = \operatorname{softmax}\left(\frac{QK^T}{\sqrt{d}} + M\right)V.
+\end{equation}
+
+Para un modelo autoregresivo, \(M_{ij}=0\) cuando \(j\leq i\) y toma un valor equivalente a \(-\infty\) cuando \(j>i\). De esta forma, la posición \(i\) no puede asignar probabilidad a posiciones futuras. Esta restricción es propia del caso autoregresivo; la implementación evaluada en este TFG utiliza atención no causal para aislar el comportamiento del kernel denso y mantener una configuración común entre todas las rutas comparadas.
+
+La formulación anterior también permite entender por qué la operación resulta costosa. Para una secuencia de longitud \(N\), la matriz de puntuaciones contiene \(N^2\) elementos por cabeza. Una implementación eficiente no debe limitarse a acelerar los productos matriciales: también debe reducir escrituras intermedias, mantener estabilidad numérica y organizar los datos de forma que la GPU pueda sostener un elevado paralelismo.
+
+\section{Por qué la atención es importante}
+
+La atención es la parte del bloque \textit{Transformer} que permite comunicación entre posiciones. Una red \textit{feed-forward} aplicada de manera independiente a cada posición puede transformar cada token, pero no puede decidir por sí sola qué otros elementos de la secuencia resultan relevantes para la representación actual. La atención introduce precisamente esa comunicación mediante una mezcla adaptativa de información.
+
+Esta capacidad es especialmente importante en lenguaje. Para interpretar o predecir un token, el modelo puede necesitar recuperar información que apareció mucho antes en la secuencia: una entidad mencionada previamente, una condición sintáctica, una referencia o una relación semántica. La atención proporciona un mecanismo directo para que esas dependencias influyan en la representación actual.
+
+Desde el punto de vista computacional, la misma propiedad que hace útil a la atención introduce un patrón exigente. El número de comparaciones crece cuadráticamente con la longitud de secuencia y la operación combina productos matriciales, normalización y acumulación de valores. Por ello constituye un buen objeto de estudio para analizar jerarquía de memoria, paralelismo, formatos numéricos y utilización de unidades matriciales.
+
+\section{Encaje dentro de una arquitectura GPT}
+
+Una arquitectura GPT se compone de una pila de bloques \textit{Transformer decoder}. El texto se tokeniza y cada identificador se transforma en un vector mediante una tabla de \textit{embeddings}. A esta representación se incorpora información posicional para que el modelo pueda distinguir el orden de los tokens.
+
+Cada bloque transforma después la secuencia mediante dos ramas principales. La primera es la atención causal multicabeza. Cada cabeza calcula relaciones sobre una subdimensión del estado interno y las salidas de todas las cabezas se combinan de nuevo en el espacio del modelo. La segunda rama es una red \textit{feed-forward} aplicada de manera independiente a cada posición. Ambas ramas se conectan mediante normalización y conexiones residuales, lo que permite apilar un gran número de bloques manteniendo estabilidad durante el entrenamiento.
+
+En GPT, la atención es causal porque el modelo se entrena para predecir el siguiente token y no puede utilizar información futura. La máscara cambia el dominio de posiciones permitidas, pero no modifica los componentes fundamentales estudiados en este TFG: productos \(QK^T\) y \(PV\), normalización mediante \textit{softmax}, movimiento de datos entre niveles de memoria y utilización de las unidades matriciales. Por esta razón, estudiar la variante no causal sigue proporcionando información directamente relevante sobre la implementación eficiente del núcleo de la operación.
