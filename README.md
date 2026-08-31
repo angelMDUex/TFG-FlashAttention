@@ -10,7 +10,7 @@ The project studies the forward pass of non-causal attention:
 
 $$
 O =
-\operatorname{softmax}
+\text{softmax}
 \left(
 \frac{QK^T}{\sqrt{d}}
 \right)V
