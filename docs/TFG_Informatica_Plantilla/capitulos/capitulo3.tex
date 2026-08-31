@@ -1,0 +1,273 @@
+\chapter{Metodología de desarrollo}
+
+En este capítulo se describe la metodología seguida durante el desarrollo y validación de las distintas implementaciones de FlashAttention. En primer lugar, se presenta el algoritmo de FlashAttention 2 utilizado como referencia. Posteriormente, se detalla la implementación desarrollada directamente en CUDA, incluyendo las principales decisiones de diseño y optimizaciones aplicadas.
+
+A continuación, se describe la implementación realizada con Triton y el proceso de \textit{autotuning} utilizado para seleccionar sus parámetros de ejecución. Finalmente, se presenta la metodología empleada para verificar la correctitud de los resultados y para detectar y depurar errores durante el desarrollo de los kernels.
+
+Los kernels implementados en CUDA y Triton, así como la implementación de referencia basada en SDPA, se evalúan bajo una configuración común: dimensión de cabeza igual a 128, longitud de secuencia múltiplo de 16, un único elemento por batch y una única cabeza de atención. En todos los casos se emplea atención no causal.
+
+
+\section{FlashAttention 2}
+
+El algoritmo utilizado como punto de partida es FlashAttention 2, propuesto por Tri Dao et al. Su objetivo es calcular la atención exacta evitando materializar completamente la matriz \(QK^T\) en memoria global. Para ello, las matrices \(Q\), \(K\) y \(V\) se dividen en bloques que pueden procesarse utilizando la memoria disponible dentro de la GPU.
+
+El cálculo se realiza recorriendo sucesivamente los bloques de \(K\) y \(V\). Para cada uno de ellos se calcula un fragmento de \(QK^T\), se actualizan de forma incremental los parámetros necesarios para el \textit{softmax} y se acumula directamente el producto correspondiente con \(V\). De esta forma, la matriz de probabilidades de atención nunca necesita almacenarse completamente en memoria global.
+
+El algoritmo de FlashAttention 2 utilizado como referencia puede expresarse mediante el siguiente pseudocódigo.
+
+\begin{algorithm}[H]
+\caption{FlashAttention 2}
+\label{alg:flashattention2}
+\begin{algorithmic}[1]
+
+\Require \(Q,K,V \in \mathbb{R}^{N\times d}\)
+\Require \(B_r\): número de filas por bloque de \(Q\)
+\Require \(B_c\): número de filas por bloque de \(K\) y \(V\)
+\Ensure \(O = \operatorname{softmax}(QK^T/\sqrt{d})V\)
+
+\State \(T_r \gets \lceil N/B_r \rceil\)
+\State \(T_c \gets \lceil N/B_c \rceil\)
+
+\State Dividir \(Q\) en bloques \(Q_1,\ldots,Q_{T_r}\), con \(Q_i \in \mathbb{R}^{B_r\times d}\)
+\State Dividir \(K\) y \(V\) en bloques \(K_1,\ldots,K_{T_c}\) y \(V_1,\ldots,V_{T_c}\), con \(K_j,V_j \in \mathbb{R}^{B_c\times d}\)
+
+\For{\(i \gets 1,\ldots,T_r\)}
+
+```
+\State \(O_i \gets 0 \in \mathbb{R}^{B_r\times d}\)
+\State \(m_i \gets -\infty \in \mathbb{R}^{B_r}\)
+\State \(l_i \gets 0 \in \mathbb{R}^{B_r}\)
+
+\For{\(j \gets 1,\ldots,T_c\)}
+
+    \State \(S_{ij} \gets Q_iK_j^T/\sqrt{d}\)
+
+    \State \(m_i^{new}
+    \gets
+    \max\left(
+        m_i,
+        \operatorname{rowmax}(S_{ij})
+    \right)\)
+
+    \State \(P_{ij}
+    \gets
+    \exp\left(
+        S_{ij}-m_i^{new}
+    \right)\)
+
+    \State \(\alpha_i
+    \gets
+    \exp\left(
+        m_i-m_i^{new}
+    \right)\)
+
+    \State \(l_i^{new}
+    \gets
+    \alpha_i \odot l_i
+    +
+    \operatorname{rowsum}(P_{ij})\)
+
+    \State \(O_i
+    \gets
+    \alpha_i \odot O_i
+    +
+    P_{ij}V_j\)
+
+    \State \(m_i \gets m_i^{new}\)
+    \State \(l_i \gets l_i^{new}\)
+
+\EndFor
+
+\State \(O_i \gets O_i \oslash l_i\)
+\State Escribir \(O_i\) en \(O\)
+```
+
+\EndFor
+
+\end{algorithmic}
+\end{algorithm}
+
+En el pseudocódigo anterior, \(\operatorname{rowmax}\) y \(\operatorname{rowsum}\) calculan respectivamente el máximo y la suma de cada fila. Los vectores \(m_i\) y \(l_i\) almacenan, para cada fila del bloque \(Q_i\), el máximo y el término de normalización acumulados durante el cálculo del \textit{softmax online}. El operador \(\odot\) representa una multiplicación elemento a elemento con difusión sobre las columnas de la matriz correspondiente, mientras que \(\oslash\) representa la división por fila.
+
+Nótese que el algoritmo propuesto por Tri Dao et al. no especifica el nivel de la jerarquía de memoria en el que deben residir los datos.
+
+\subsection{Algoritmo CUDA}
+
+La implementación CUDA distribuye el cálculo de la atención a nivel de \textit{warp}. Cada \textit{warp} es responsable de un bloque de 16 filas consecutivas de la matriz de consultas \(Q\), de forma que un bloque CUDA contiene varios \textit{warps} que procesan de manera independiente distintos bloques de consultas. La posición global del \textit{warp} determina las filas de \(Q\) y de la salida \(O\) que le corresponden, mientras que su identificador dentro del bloque se emplea para cooperar en la transferencia de \(K\) y \(V\) a memoria compartida. De esta manera, cada \textit{warp} mantiene en registros su bloque de consultas y el acumulador correspondiente a 16 filas de la salida.
+
+Las matrices \(K\) y \(V\) se recorren en bloques de \(16\times128\) elementos. Para ocultar parcialmente la latencia de memoria global se utiliza un \textit{pipeline} con múltiples buffers en memoria compartida. Mientras un bloque de \(K\) y \(V\) está siendo consumido por los \textit{warps}, bloques posteriores se transfieren desde memoria global mediante instrucciones asíncronas \texttt{cp.async}. Los buffers se organizan de forma circular, de manera que el buffer utilizado para el bloque \(i\) puede reutilizarse para almacenar el bloque \(i+\texttt{buffer\_num}\) una vez que todos los \textit{warps} han terminado de consumirlo. La carga de cada bloque de \(K\) y \(V\) se realiza de forma cooperativa entre todos los \textit{warps} del bloque CUDA. Como consecuencia, todos ellos avanzan de forma prácticamente \textit{lockstep} a través del bucle principal: antes de consumir un nuevo bloque deben esperar a que las transferencias asíncronas correspondientes hayan finalizado y sincronizarse mediante una barrera a nivel de bloque. De forma análoga, antes de reutilizar un buffer de memoria compartida, todos los \textit{warps} deben haber terminado de consumir su contenido. Esta sincronización garantiza la corrección del acceso cooperativo a memoria compartida, aunque reduce el grado de independencia temporal entre los distintos \textit{warps} del bloque.
+La transferencia desde memoria compartida al fichero de registros constituye un segundo nivel de \textit{buffering}. Los fragmentos de \(K\) y \(V\) se cargan mediante \texttt{ldmatrix.sync.aligned.m8n8.x4.shared.b16}, que permite obtener simultáneamente cuatro matrices \(8\times8\) desde memoria compartida y distribuirlas directamente entre los registros del \textit{warp}. El código mantiene un pequeño \textit{pipeline} entre estas cargas y las operaciones matriciales: mientras un par de fragmentos se utiliza en los Tensor Cores, se carga desde memoria compartida el siguiente par que será consumido.
+
+Los productos matriciales se realizan mediante la instrucción \texttt{mma.sync.aligned.m16n8k16} con operandos BF16 y acumulación FP32. Cada instrucción calcula un producto \(16\times16\) por \(16\times8\), produciendo un fragmento \(16\times8\) en precisión simple. Para calcular \(QK^\mathsf{T}\), un bloque lógico de puntuaciones de tamaño \(16\times16\) se representa mediante dos fragmentos \(16\times8\). Tras aplicar el escalado y el \textit{softmax} online, las probabilidades se convierten nuevamente a BF16 y se utilizan como operando izquierdo en los productos \(PV\). El acumulador de salida permanece en FP32 durante todo el recorrido de \(K\) y \(V\), realizándose la conversión a BF16 únicamente al escribir el resultado final.
+Para mejorar tanto el acceso a memoria global como el acceso posterior mediante \texttt{ldmatrix}, los bloques de \(K\) y \(V\) se almacenan en memoria compartida utilizando un patrón \textit{swizzled}. La granularidad del \textit{swizzle} es de ocho elementos BF16, equivalentes a 16 bytes. Para una fila \(r\) y un bloque lógico de ocho elementos \(c\), la posición física utilizada en memoria compartida se obtiene mediante
+
+$$
+c_{\mathrm{swizzled}} = c \oplus (r \bmod 8).
+$$
+
+El XOR redistribuye entre los bancos de memoria compartida los segmentos pertenecientes a filas consecutivas. Al efectuar posteriormente un \texttt{ldmatrix}, cada hilo reconstruye la dirección física aplicando el mismo XOR al bloque lógico que necesita. De este modo, la disposición en memoria global puede mantenerse completamente contigua y coalescente, mientras que la disposición en memoria compartida se adapta al patrón de acceso requerido por \texttt{ldmatrix}.
+
+En conjunto, el kernel emplea dos niveles explícitos de movimiento de datos: un \textit{pipeline} memoria global--memoria compartida mediante \texttt{cp.async}, y un segundo \textit{pipeline} memoria compartida--registros mediante \texttt{ldmatrix}. Sobre los fragmentos residentes en registros se ejecutan las instrucciones \texttt{mma.sync} de los Tensor Cores, manteniendo tanto los estados del \textit{softmax} online como el acumulador de salida en registros durante toda la operación.
+
+\begin{algorithm}[H]
+\caption{FlashAttention CUDA}
+\begin{algorithmic}[1]
+
+\State Asignar a cada \textit{warp} 16 filas consecutivas de \(Q\)
+\State Cargar el bloque de \(Q\) correspondiente en registros
+\State Inicializar acumulador \(O \gets 0\), máximo de fila \(m \gets -\infty\) y denominador \(l \gets 0\)
+
+\For{\(b \gets 0\) hasta \(\texttt{buffer\_num}-1\)}
+\State Cargar cooperativamente \(K_b\) y \(V_b\) de memoria global a memoria compartida mediante \texttt{cp.async}
+\State Aplicar \textit{swizzle} XOR durante la escritura en memoria compartida
+\EndFor
+
+\For{cada bloque \(i\) de 16 filas de \(K\) y \(V\)}
+
+```
+\State Esperar al buffer correspondiente mediante \texttt{cp.async.wait\_group}
+\State Sincronizar todos los \textit{warps} del bloque
+\Comment{Los \textit{warps} avanzan prácticamente en \textit{lockstep}}
+
+\State \(S \gets 0\)
+
+\State Cargar primeros fragmentos de \(K_i\) desde memoria compartida a registros con \texttt{ldmatrix}
+
+\For{cada fragmento de dimensión \(16\times16\) en la dimensión de cabeza}
+    \State Cargar anticipadamente el siguiente fragmento de \(K_i\) mediante \texttt{ldmatrix}
+    \State \(S \gets S + QK_i^\mathsf{T}\) mediante \texttt{mma.sync.m16n8k16}
+\EndFor
+
+\State \(S \gets S/\sqrt{d}\)
+
+\State \(m_{\mathrm{new}} \gets \max(m,\operatorname{rowmax}(S))\)
+\State \(\alpha \gets \exp(m-m_{\mathrm{new}})\)
+\State \(P \gets \exp(S-m_{\mathrm{new}})\)
+\State \(l_{\mathrm{new}} \gets \alpha l + \operatorname{rowsum}(P)\)
+
+\State Convertir \(P\) de FP32 a BF16 para utilizarlo como operando de los Tensor Cores
+
+\State \(O \gets \alpha O\)
+
+\State Cargar primeros fragmentos de \(V_i\) desde memoria compartida a registros mediante \texttt{ldmatrix}
+
+\For{cada fragmento \(16\times8\) de \(V_i\)}
+    \State Cargar anticipadamente el siguiente fragmento de \(V_i\)
+    \State \(O \gets O + PV_i\) mediante \texttt{mma.sync.m16n8k16}
+\EndFor
+
+\State \(m \gets m_{\mathrm{new}}\)
+\State \(l \gets l_{\mathrm{new}}\)
+
+\State Sincronizar todos los \textit{warps} antes de reutilizar el buffer
+
+\If{existen bloques futuros de \(K\) y \(V\)}
+    \State Reutilizar el buffer consumido
+    \State Cargar asíncronamente el siguiente bloque \(K_{i+\texttt{buffer\_num}},V_{i+\texttt{buffer\_num}}\)
+\EndIf
+```
+
+\EndFor
+
+\State \(O \gets O/l\)
+
+\State Redistribuir los elementos de \(O\) entre los hilos del \textit{warp}
+\State Escribir \(O\) en memoria global mediante stores coalescentes
+
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{FlashAttention: Triton}
+
+La implementación en Triton sigue la misma descomposición algorítmica que las versiones anteriores, aunque expresa el cálculo a un nivel de abstracción superior. Cada instancia del programa Triton procesa un bloque de \(B_r\) filas consecutivas de la matriz de consultas \(Q\) y recorre secuencialmente la dimensión de secuencia de \(K\) y \(V\) en bloques de \(B_c\) filas. De esta forma, cada programa mantiene localmente el acumulador de salida y los parámetros necesarios para calcular el \textit{softmax online}, evitando materializar la matriz completa \(QK^\mathsf{T}\) en memoria global.
+
+Dado que la dimensión de cabeza se fija en \(d=128\), cada bloque de consultas tiene dimensiones \(B_r\times128\), mientras que los bloques de claves y valores tienen dimensiones \(B_c\times128\). Para cada bloque de \(K\) se calcula una matriz temporal de puntuaciones de dimensiones \(B_r\times B_c\). Esta matriz únicamente permanece durante la iteración actual del algoritmo y se utiliza inmediatamente para actualizar el \textit{softmax} y el acumulador de salida.
+
+El producto matricial se expresa mediante la operación \texttt{tl.dot}. Con operandos BF16 sobre arquitecturas que disponen de Tensor Cores, el compilador de Triton puede transformar esta operación en las instrucciones matriciales correspondientes, manteniendo la acumulación en FP32. A diferencia de la implementación CUDA, no se especifican directamente instrucciones como \texttt{cp.async}, \texttt{ldmatrix} o \texttt{mma.sync}, sino que la generación y planificación de estas operaciones se delega al compilador.
+
+La implementación se parametriza mediante cuatro parámetros principales:
+
+\begin{itemize}
+\item \(B_r\): número de filas de \(Q\) procesadas por cada instancia del programa.
+\item \(B_c\): número de filas de \(K\) y \(V\) procesadas en cada iteración.
+\item \texttt{num_warps}: número de \textit{warps} utilizados para ejecutar una instancia del programa.
+\item \texttt{num_stages}: número de etapas utilizadas por el \textit{pipeline} de cargas y cómputo generado por Triton.
+\end{itemize}
+
+La dimensión de cabeza no forma parte del espacio de búsqueda, ya que se mantiene fija en 128 para todos los experimentos. De forma análoga, el tamaño de batch y el número de cabezas se fijan ambos a uno. Por tanto, el proceso de \textit{autotuning} explora únicamente combinaciones de los cuatro parámetros anteriores.
+
+El valor de \(B_r\) determina la cantidad de filas de salida calculadas simultáneamente y, por tanto, afecta directamente al tamaño del acumulador mantenido por cada programa. El valor de \(B_c\) determina el tamaño de los bloques temporales de puntuaciones y la granularidad con la que se recorren \(K\) y \(V\). Valores elevados de ambos parámetros pueden incrementar la reutilización de datos y el trabajo realizado por programa, pero también aumentan el consumo de registros y memoria compartida. Por su parte, \texttt{num_warps} controla el paralelismo dentro de cada programa, mientras que \texttt{num_stages} modifica la profundidad del \textit{pipeline} utilizado para solapar transferencias de memoria y cómputo.
+
+Las distintas combinaciones se evalúan mediante el mecanismo de \textit{autotuning} de Triton, seleccionándose para cada configuración aquella que presenta el menor tiempo de ejecución. De este modo, la versión Triton permite explorar automáticamente distintas relaciones entre tamaño de bloque, paralelismo y profundidad del \textit{pipeline}, en contraste con la implementación CUDA, donde estas decisiones se controlan explícitamente.
+
+El funcionamiento del kernel puede resumirse mediante el Algoritmo~\ref{alg:flashattention_triton}.
+
+\begin{algorithm}[H]
+\caption{FlashAttention Triton}
+\label{alg:flashattention_triton}
+\begin{algorithmic}[1]
+
+\Require \(Q,K,V\in\mathbb{R}^{N\times128}\)
+\Require \(B_r\): filas de \(Q\) procesadas por programa
+\Require \(B_c\): filas de \(K\) y \(V\) procesadas por iteración
+\Ensure \(O=\operatorname{softmax}(QK^\mathsf{T}/\sqrt{128})V\)
+
+\State Asignar a cada programa un bloque \(Q_i\in\mathbb{R}^{B_r\times128}\)
+\State Cargar \(Q_i\)
+\State \(O_i \gets 0 \in \mathbb{R}^{B_r\times128}\) en FP32
+\State \(m_i \gets -\infty \in \mathbb{R}^{B_r}\)
+\State \(l_i \gets 0 \in \mathbb{R}^{B_r}\)
+
+\For{cada bloque \(K_j,V_j\in\mathbb{R}^{B_c\times128}\)}
+
+```
+\State Cargar \(K_j\)
+\State \(S_{ij} \gets \texttt{tl.dot}(Q_i,K_j^\mathsf{T})/\sqrt{128}\)
+
+\State \(m_i^{new}
+    \gets
+    \max\left(
+        m_i,
+        \operatorname{rowmax}(S_{ij})
+    \right)\)
+
+\State \(\alpha_i
+    \gets
+    \exp(m_i-m_i^{new})\)
+
+\State \(P_{ij}
+    \gets
+    \exp(S_{ij}-m_i^{new})\)
+
+\State \(l_i^{new}
+    \gets
+    \alpha_i\odot l_i
+    +
+    \operatorname{rowsum}(P_{ij})\)
+
+\State \(O_i \gets \alpha_i\odot O_i\)
+
+\State Cargar \(V_j\)
+\State \(O_i
+    \gets
+    O_i
+    +
+    \texttt{tl.dot}(P_{ij},V_j)\)
+
+\State \(m_i \gets m_i^{new}\)
+\State \(l_i \gets l_i^{new}\)
+```
+
+\EndFor
+
+\State \(O_i \gets O_i\oslash l_i\)
+\State Convertir \(O_i\) al formato de salida
+\State Escribir \(O_i\) en memoria global
+
+\end{algorithmic}
+\end{algorithm}
+
+A diferencia de la versión CUDA, el pseudocódigo no representa de forma explícita el movimiento entre memoria global, memoria compartida y registros. Estas decisiones, junto con la planificación de las operaciones matriciales y el solapamiento entre cargas y cómputo, son realizadas por el compilador de Triton en función de la configuración seleccionada.
+
+\chapter {Entorno de prueba}
+

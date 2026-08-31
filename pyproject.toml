@@ -1,0 +1,26 @@
+[project]
+name = "tfg_fa"
+version = "0.1.0"
+description = "Lite flash attention implementation in Cuda and Triton to compare the results."
+readme = "README.md"
+authors = [
+    { name = "angelMDUex", email = "amorenovf@alumnos.unex.es" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "cmake>=4.4.3",
+    "numpy>=2.5.2",
+    "nvtx>=0.2.16",
+    "pytest>=9.1.1",
+    "python-lsp-server[all]>=1.15.0",
+    "ruff>=0.16.5",
+    "torch>=2.13.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.6,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = "src/py"
+module-name = "tfg_fa"

@@ -1,0 +1,290 @@
+\chapter{Motivación y objetivos}
+
+Capítulo inicial de la memoria, donde se da un contexto al proyecto, y se presenta la motivación que ha llevado a su desarrollo y los objetivos planteados. Suele finalizar con un punto que indica la estructura de la memoria.
+
+% My-Version.
+
+En 2019, la startup Openai publica Generative Pretrained Transformer 2 (GPT-2), un modelo de lenguaje capaz de traducir, resumir, y responder preguntas sobre pasajes sin necesidad de reentreno o de un cambio de modelo/pesos para cada tarea. Las redes neuronales recurrentes y convolucionales empleadas hasta la fecha presentan problemas de olvido. El modelo de Openai implementa una arquitectura transformer, detallada por primera vez en el famoso paper Attention is all you need, capaz de transformar una serie de tokens de entrada en una representacion que anade la informacion de los tokens que los preceden, impidiendo de esta manera el olvido.
+
+Estos modelos experimentan una revolucion con la llegada de GPT-3, modelo que ya no se hace de codigo abierto. Por primera vez, un ordenador entrenado durante dias es capaz en ocasiones de generar respuestas mejores en multiples dominios que personas que han sido educadas durante a;os en un unico campo. La idea de perseguir un modelo de inteligencia general, algo equiparable a la imprenta o la maquina de vapor en su dia, ha empezado una carrera armamentistica en el sector de la computacion por ver quien consigue antes el mejor modelo.
+
+Sin embargo, el mecanismo de atencion crece con el cuadrado de la longitud de la ventana de contexto. Las redes son cada vez mas profundas. Los datos empleados para entrenarlas son cada vez mas grandes. Todo ello convierte la inferencia, pero en especial el entrenamiento en una tarea de supercomputacion.
+Actualmente, todos estos frentes estan abiertos.
+
+\begin{list}
+\item{Los modelos de lenguaje se entrenan principalmente en aceleradores graficos. Estos dispositivos, provenientes de otro sector ligado a la supercomputacion como es el mundo de los videojuegos, han experimentado un elevado incremento de la demanda destinada a la inteligencia artificial. Tambien han visto su complejidad de programacion incrementada exponencialmente, pareciendose la tarea de programarlas cada vez mas en una tarea de optimizacion.}.
+\item{Dada la gran cantidad de fabricantes de aceleradores (multiples ISAs), cada vez surgen mas compiladores con el objetivo de reducir la dificultad de programacion de los mismos, mantener la portabilidad y alcanzar un rendimiento optimo}
+\item{En los modelos usados en la actualidad basados en MOE (Mixture of Experts), deben permanecer en memoria principal todos los expertos con el fin de mantener el rendimiento. Esto ha ocasionado una gran subida en los precios de las memorias RAM y tambien ha subrayado la necesidad de aprovechar mejor el espacio en memoria.}
+\item{Si bien el modelo GPT-2 se entrena bajo la idea de predecir el siguiente token, haciendolo una tarea factible para el descenso del gradiente, las necesidades actuales requieren asignar una recompensa que solo es conocida tras generar un numero indeterminado de tokens, como es el caso de los codigos de programacion. Estos modelos se entrenan mediante aprendizaje por refuerzo, una tecnica que por lo general, si bien extraen mas informacion por pasada que los algoritmos evolutivos, sigue siendo baja. Multiples pasadas sobre un set de datos gigantesco incrementa todavia mas los recursos necesarios de computacion, electricidad y subraya la necesidad de encontrar e implementar algoritmos y operaciones del modelo mas eficientes.}
+
+
+\section{Introducción}
+Sección de introducción \cite{forecast}.
+\section{Motivación}
+
+\section{Objetivos}
+Describir el mecanismo de atencion.
+Describir fa-4.
+Implementar fa-4 en tirx para una gpu B200.
+Implementar fa-4 en triton.
+Comparativa de rendimiento ncu.
+
+\section{Originalidad del TFG}
+La originalidad reside en la comparativa entre una version de alto nivel de flash attention y una version de bajo nivel como es la representacion intermedia de tirx.
+
+\section{Planificación}
+En algún momento habría que incluir la planificación seguida en el proyecto
+\section{Organización del documento}
+Sección de organización del documento
+
+\section{Introducción }
+
+Una de las tareas principales de aprendizaje en un grado de Ingeniería
+es el desarrollo de trabajos y más concretamente del Trabajo Fin de
+Grado (TFG). En la mayoría de los Centros se dispone de Guías de TFG,
+pero suelen restringirse a normas de presentación de tipo administrativo
+(normativa de TFG). Por ello parece imprescindible disponer de una
+pautas que sirva de guía al estudiante y que, a su vez, facilite al
+profesor el proceso de evaluación de estas actividades. \footnote{Para la elaboración de este documento se ha utilizado principalmente
+los trabajos publicados en \cite{tfg_alicante,pfc}}
+
+Este documento pretende ser una guía de cómo escribir un Trabajo Fin
+de Grado (TFG). El mismo se puede extrapolar con algunas modificaciones
+a cualquier documento técnico, como, por ejemplo, tesis doctorales
+o artículos. 
+
+Este trabajo comenzará describiendo la estructura de una memoria para
+posteriormente aportar una serie de recomendaciones sobre la elaboración
+de la misma.
+
+\section{Estructura del TFG}
+
+Aunque es muy difícil aportar una estructura fija a un proyecto, en
+este apartado se muestra los apartados que se consideran más significativos. 
+
+Tal y como se recoge en \cite{tfg_alicante}, en caso de que el TFG/TFM
+tenga como finalidad la elaboración de un proyecto o un informe científico
+o técnico, deberá ajustarse a lo dispuesto en las normas UNE 157001:2002\cite{une2002}
+y UNE 50135:1996\cite{une96} respectivamente. Si el TFG/TFM tiene
+por finalidad la elaboración de un trabajo monográfico, el documento
+presentado deberá constar de las siguientes partes, teniendo como
+base la norma UNE 50136:1997\cite{une97}. 
+
+De este modo los apartados más característicos son:
+\begin{itemize}
+\item Portada (1 página). En este caso debe seguir lo especificado en la
+normativa. 
+\item ContraPortada (1 página). En este caso debe seguir lo especificado
+en la normativa. 
+\item Agradecimientos y/o dedicatoria (1-2 página.). 
+\item Índices: cada índice debe comenzar en una nueva página, se incluirán
+los índices que se estimen necesarios (conforme UNE 50111:1989\cite{une89}),
+en este orden: 
+
+\begin{itemize}
+\item Índice de contenidos: (obligatorio siempre) se incluirá un índice
+de las secciones de las que se componga el documento, la numeración
+de las divisiones y subdivisiones utilizarán cifras arábigas (según
+UNE 50132:1994\cite{une94}) y harán mención a la página del documento
+donde se ubiquen. 
+\item Índice de figuras: si el documento incluye figuras se podrá incluir
+también un índice con su relación, indicando la página donde se ubiquen. 
+\item Índice de tablas: en caso de existir en el texto, ídem que el anterior. 
+\item Índice de abreviaturas, siglas, símbolos, etc.: en caso de ser necesarios
+se podrá incluir cada uno de ellos. 
+\end{itemize}
+\item Resumen: Se describirá de forma breve y concisa la motivación que
+ha originado la realización del TFG/TFM así como lo elaborado en el
+trabajo. 
+\item Cuerpo del documento: en el contenido del documento se da flexibilidad
+para su organización y se puede estructurar en las secciones que se
+considere. En todo caso obligatoriamente se deberá, al menos, incluir
+los siguientes contenidos: 
+
+\begin{itemize}
+\item Introducción: donde se hará énfasis a la importancia de la temática,
+su vigencia y actualidad; se planteará el problema a investigar, así
+como el propósito o finalidad de la investigación.
+\item Marco teórico o Estado del arte : se hará mención a los elementos
+conceptuales que sirven de base para la investigación, estudios previos
+relacionados con el problema planteado, etc. 
+\item Metodología : se indicará el tipo o tipos de investigación, las técnicas
+y los procedimientos que serán utilizados para llevarla a cabo; se
+identificará la población y el tamaño de la muestra así como las técnicas
+e instrumentos de recolección de datos. 
+\item Cuerpo del trabajo: Incluirá los resultados de la investigación o
+trabajo, así como el análisis y la discusión de los mismos. Normalmente
+en los TFG suele corresponderse a un ciclo de vida de desarrollo de
+un sistema de información, concretamente: 
+
+\begin{itemize}
+\item Análisis del sistema
+\item Diseño del Sistema
+\item Implementación del Sistema
+\end{itemize}
+\end{itemize}
+\item Conclusiones: obligatoriamente se incluirá una sección de conclusiones
+donde se realizará un resumen de los objetivos conseguidos así como
+de los resultados obtenidos si proceden. 
+\item Bibliografía y referencias: se incluirá también la relación de obras
+y materiales consultados y empleados en la elaboración de la memoria
+del TFG. Podrá utilizarse cualquier sistema bibliográfico normalizado. 
+\item Anexos: se podrá incluir los anexos que se consideren oportunos. 
+\end{itemize}
+Algunos de estos apartados pueden tener una mayor importancia dependiendo
+del tipo de proyecto que se desarrolle. De este modo si: 
+\begin{itemize}
+\item Proyectos de desarrollo: En este caso los apartados de análisis, diseño
+e implementación tiene una mayor importancia y se debe desgranar cada
+uno de ellos pormenorizadamente. 
+\item Proyectos basados en la investigación: En este caso el apartado de
+situación del arte es fundamental pues en el mismo se realiza una
+revisión de todos aspectos necesarios para abordar el problema. 
+\item Proyectos de evaluación: En este tipo de proyectos el apartado de
+situación del arte es crucial pues se debe realizar una evaluación
+detallada de cada uno de los aspectos a evaluar. 
+\item Proyectos de colaboración con empresas
+\item etc
+\end{itemize}
+
+\section{Cuestiones generales}
+
+Una vez que se ha descrito la estructura de un documento de técnico
+en el apartado anterior, a continuación se aportarán ciertas cuestiones
+que deben ser tenidas en cuenta en su elaboración. De forma generalizada,
+destacar:
+\begin{itemize}
+\item Los párrafos, secciones y capítulos están relacionados uno con otros
+y no se incluyen en la memoria sin sentido. Por este motivo deben
+aportarse párrafos o frases que sirvan de nexo de unión entre ellos.
+Es recomendable cuando se inicia una nueva sección o cuando se finaliza
+una, establecer la unión con la anterior o siguiente. Por ejemplo
+en esta sección, se ha comenzado con <<Una vez que ...>>
+\item Conviene estructurar el texto en capítulos, secciones y subsecciones. 
+\item Altamente recomendable utilizar Latex/Lyx. 
+\item No se debe abusar en exceso de la primera persona: porque yo, yo,
+yo y otra vez yo. Se suele usar bastante la primera persona plural
+o frases impersonales (pasiva).
+\item Cualquier aportación de otra persona (texto, idea, figura, tabla,
+etc) debe referenciarse en el texto (se verá a continuación). Por
+ejemplo en el inicio de la sección 2 de este documento <<Tal y como
+se recoge en \cite{tfg_alicante}, ..>>, de este modo, se establece
+que lo mostrado a continuación se ha obtenido de la referencia indicada. 
+\item Cualquier figura o tabla debe referenciarse y tener un pie de figura/tabla
+indicativo (se verá a continuación)
+\item La primera vez que se utiliza un acrónimo, debe especificarse de dónde
+viene. Por ejemplo, \textquotedblleft Trabajo Fin de Grado(TFG) ...\textquotedblright . 
+\item Se debe evitar la utilización de términos en inglés. Si se desea poner
+alguno, se incluirá en itálica o \textquotedblleft con comillas\textquotedblright . 
+\end{itemize}
+
+\subsection{Figuras y tablas}
+
+Como regla general todas las figuras, tablas y otros elementos similares
+\uline{deben estar numerada y tener un título identificativo}. Para
+ello deberá usarse números consecutivos (automáticos) a lo largo de
+todo el documento (es decir, Figura 1, Figura 2 o incluso categorizada
+por capítulos Figura 3.1, Figura 4.2). Igualmente es muy importante
+que estén referenciados y explicados pormenorizadamente: una figura
+sin su correspondiente explicación no aporta NADA a la memoria del
+proyecto. 
+
+En \cite{Jenui} se establece que las figuras, tablas y otros elementos
+similares deben ir centradas y pueden estar encuadradas en una columna,
+o usar todo el ancho de las dos columnas. En este último caso las
+figuras y tablas deberían estar situadas en los extremos superior
+o inferior del texto, es decir, sólo deberían tener texto por encima
+o por debajo. 
+
+Por ejemplo en la \ref{fig:Plantilla-de-evaluaci=0000F3n} se muestra
+la plantilla de evaluación de la memoria oral del TFG en formato imagen.
+En la misma se puede comprobar los distintos hitos que son evaluables
+así como la ponderación de cada uno de ellos.
+
+\begin{figure}[h]
+\begin{centering}
+\includegraphics[scale=0.7]{pegado1}
+\par\end{centering}
+\caption{\protect\label{fig:Plantilla-de-evaluaci=0000F3n}Plantilla de evaluación
+de la memoria oral del TFG}
+\end{figure}
+
+
+\subsection{Tablas}
+
+Lo establecido en el apartado anterior también debe aplicarse a las
+tablas: debe estar enumeradas, referenciadas y explicadas. De este
+modo en la \ref{tab:Plantilla-de-evaluaci=0000F3n} se muestra en
+formato tabla la plantilla de evaluación de la memoria escrita del
+TFG donde además se proporciona la ponderación, en el caso de informática,
+de cada uno de los items evaluables. 
+
+\begin{table}[h]
+\begin{centering}
+\begin{tabular}{|c|c|}
+\hline 
+ & {\footnotesize Ponderación}\tabularnewline
+\hline 
+\hline 
+{\footnotesize Objetivos} & {\footnotesize 10\%}\tabularnewline
+\hline 
+{\footnotesize Marco Teórico} & {\footnotesize 10\%}\tabularnewline
+\hline 
+{\footnotesize Metodología} & {\footnotesize 10\%}\tabularnewline
+\hline 
+{\footnotesize Elaboración} & {\footnotesize 10\%}\tabularnewline
+\hline 
+{\footnotesize Discusión de resultados} & {\footnotesize 10\%}\tabularnewline
+\hline 
+{\footnotesize Conclusiones} & {\footnotesize 10\%}\tabularnewline
+\hline 
+{\footnotesize Originalidad} & {\footnotesize 10\%}\tabularnewline
+\hline 
+{\footnotesize Planificación} & {\footnotesize 5\%}\tabularnewline
+\hline 
+{\footnotesize Estructura del Documento} & {\footnotesize 5\%}\tabularnewline
+\hline 
+{\footnotesize Ortografía y redacción} & {\footnotesize 10\%}\tabularnewline
+\hline 
+{\footnotesize Bibliografía} & {\footnotesize 5\%}\tabularnewline
+\hline 
+{\footnotesize Observaciones} & {\footnotesize 5\%}\tabularnewline
+\hline 
+\end{tabular}
+\par\end{centering}
+\caption{\protect\label{tab:Plantilla-de-evaluaci=0000F3n}Plantilla de evaluación
+de la memoria escrita del TFG}
+\end{table}
+
+
+\subsection{Bibliografía}
+
+Sin duda alguna uno de los aspectos más importantes de una memoría
+técnica pues proporciona la relación de obras y materiales consultados
+y empleados en la elaboración de la memoria del TFG. 
+
+En UNE-ISO 690:2013\cite{une2013} se establecen tres métodos de citación,
+deberá utilizarse el más acorde a la rama de conocimiento: 
+\begin{itemize}
+\item Sistema de nombre y fecha (Name and date system, Harvard system):
+Presenta las citas dentro del texto del trabajo, utilizando el apellido
+del autor, la fecha de publicación y la página citada entre paréntesis
+(hay variantes). La cita en el texto suele establecerse mediante el
+autor principal y el año entre paréntesis (Arevalo 2003)
+\item Sistema numérico (Numeric system): Se numeran las referencias bibliográficas
+en orden de aparición y se indexan al final del documento. La cita
+en el texto se indica con paréntesis, corchetes o superíndice {[}3{]}
+\item Sistema de notas (Running notes): Permite hacer anotaciones en el
+texto mediante una llamada a una nota a pie de página o al final del
+capítulo. La cita en el texto se indica con paréntesis, corchetes
+o superíndice. 
+\end{itemize}
+Para una gestión eficiente de las referencias se recomienda (obliga)
+utilizar una herramienta automática de generación de citas. La gran
+mayoría de los editores ofimáticos ya incorporan un gestor de bibliografía,
+por lo que se aconseja que antes de comenzar a realizar un memoria
+TFG se investigue previamente cómo usarlo. 
+
+\textbf{Consejo final}: No debe dejarse las bibliografías para el
+último momento sino deben irse incorporando según se vayan consultandos
+los materiales.
