@@ -1,1 +1,0 @@
-/usr/bin/c++ -O3 -DNDEBUG CMakeFiles/cuda_tests.dir/test_tile_load.cu.o CMakeFiles/cuda_tests.dir/test_mma.cu.o -o cuda_tests   -L/usr/local/cuda-13/targets/x86_64-linux/lib/stubs  -L/usr/local/cuda-13/targets/x86_64-linux/lib  ../lib/libgtest_main.a ../lib/libgtest.a -lcudadevrt -lcudart_static -lrt -lpthread -ldl
