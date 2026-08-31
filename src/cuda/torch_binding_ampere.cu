@@ -48,7 +48,28 @@ torch::Tensor flash_attention_cuda(torch::Tensor q, torch::Tensor k, torch::Tens
     // Idealmente cambia tu launcher para recibir stream.
     cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
-    fa_launcher<8192, 128>(q_ptr, k_ptr, v_ptr, o_ptr, stream);
+    switch (N) {
+    case 1024:
+      fa_launcher<1024, 128>(q_ptr, k_ptr, v_ptr, o_ptr, stream);
+      break;
+    case 2048:
+      fa_launcher<2048, 128>(q_ptr, k_ptr, v_ptr, o_ptr, stream);
+      break;
+    case 4096:
+      fa_launcher<4096, 128>(q_ptr, k_ptr, v_ptr, o_ptr, stream);
+      break;
+    case 8192:
+      fa_launcher<8192, 128>(q_ptr, k_ptr, v_ptr, o_ptr, stream);
+      break;
+    case 16384:
+      fa_launcher<16384, 128>(q_ptr, k_ptr, v_ptr, o_ptr, stream);
+      break;
+    case 32768:
+      fa_launcher<32768, 128>(q_ptr, k_ptr, v_ptr, o_ptr, stream);
+      break;
+    default:
+      TORCH_CHECK(false, "Unsupported sequence length: ", N);
+    }
 
     return out;
 }

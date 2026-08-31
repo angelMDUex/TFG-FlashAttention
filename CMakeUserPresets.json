@@ -1,0 +1,22 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "angel-wsl",
+      "inherits": "default",
+      "cacheVariables": {
+        "CMAKE_CUDA_COMPILER": "/usr/local/cuda-13/bin/nvcc",
+        "CUDAToolkit_ROOT": "/usr/local/cuda-13.0",
+        "Python3_EXECUTABLE": "${sourceDir}/.venv/bin/python",
+        "TORCH_CUDA_ARCH_LIST": "8.0",
+	"CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "angel-wsl",
+      "configurePreset": "angel-wsl"
+    }
+  ]
+}

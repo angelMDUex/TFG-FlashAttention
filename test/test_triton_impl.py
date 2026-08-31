@@ -5,7 +5,7 @@ from tfg_fa.triton_impl import flash_attention
 
 
 def test_flash_attention():
-    n = 8192
+    n = 1 << 20
     d = 128
 
     q = torch.randn((n, d), device="cuda", dtype=torch.bfloat16)
@@ -48,3 +48,41 @@ def test_profile_flash_attention():
         flash_attention(q, k, v)
 
     torch.cuda.synchronize()
+
+
+
+def test_benchmark_flash_attention():
+    d = 128
+    seq_lens = [1024, 2048, 4096, 8192, 16384, 32768]
+    repeats = 100
+
+    means = []
+    stds = []
+
+    for n in seq_lens:
+        q = torch.randn((n, d), device="cuda", dtype=torch.bfloat16)
+        k = torch.randn_like(q)
+        v = torch.randn_like(q)
+
+        flash_attention(q, k, v)
+        torch.cuda.synchronize()
+
+        times = []
+        for _ in range(repeats):
+            start = torch.cuda.Event(enable_timing=True)
+            end = torch.cuda.Event(enable_timing=True)
+
+            start.record()
+            flash_attention(q, k, v)
+            end.record()
+
+            torch.cuda.synchronize()
+            times.append(start.elapsed_time(end))
+
+        times = torch.tensor(times)
+        means.append(times.mean().item())
+        stds.append(times.std().item())
+
+    print("seq_lens =", seq_lens)
+    print("means_ms =", means)
+    print("stds_ms =", stds)

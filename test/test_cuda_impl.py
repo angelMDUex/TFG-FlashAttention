@@ -120,16 +120,6 @@ def test_cuda_all_ones():
         atol=1e-2,
     )
 
-import math
-import pytest
-import torch
-
-from tfg_fa import tfg_fa_cuda
-
-
-N = 8192
-D = 128
-
 
 # @pytest.mark.parametrize(
 #     "key_id",
@@ -202,3 +192,43 @@ def test_cuda_attention_weight_layout():
     print("top values:", values)
     print("sum first 128:", weights.sum().item())
     print("weight key 0:", weights[0].item())
+
+
+def test_benchmark_cuda():
+    d = 128
+    seq_lens = [1024, 2048, 4096, 8192, 16384, 32768]
+    repeats = 100
+
+    means = []
+    stds = []
+
+    for n in seq_lens:
+        q = torch.randn((n, d), device="cuda", dtype=torch.bfloat16)
+        k = torch.randn_like(q)
+        v = torch.randn_like(q)
+
+        # Warmup
+        flash_attention_cuda(q, k, v)
+        torch.cuda.synchronize()
+
+        times = []
+
+        for _ in range(repeats):
+            start = torch.cuda.Event(enable_timing=True)
+            end = torch.cuda.Event(enable_timing=True)
+
+            start.record()
+            flash_attention_cuda(q, k, v)
+            end.record()
+
+            torch.cuda.synchronize()
+            times.append(start.elapsed_time(end))
+
+        times = torch.tensor(times)
+
+        means.append(times.mean().item())
+        stds.append(times.std().item())
+
+    print("seq_lens =", seq_lens)
+    print("means_ms =", means)
+    print("stds_ms =", stds)

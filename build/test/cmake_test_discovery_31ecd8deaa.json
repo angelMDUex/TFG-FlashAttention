@@ -1,0 +1,28 @@
+{
+  "tests": 2,
+  "name": "AllTests",
+  "testsuites": [
+    {
+      "name": "QLoad",
+      "tests": 1,
+      "testsuite": [
+        {
+          "name": "CopyTest",
+          "file": "\/root\/TFG-FlashAttention\/test\/test_tile_load.cu",
+          "line": 72
+        }
+      ]
+    },
+    {
+      "name": "MMA",
+      "tests": 1,
+      "testsuite": [
+        {
+          "name": "BF16Ones",
+          "file": "\/root\/TFG-FlashAttention\/test\/test_mma.cu",
+          "line": 64
+        }
+      ]
+    }
+  ]
+}
