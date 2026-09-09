@@ -8,8 +8,19 @@
         "CMAKE_CUDA_COMPILER": "/usr/local/cuda-13/bin/nvcc",
         "CUDAToolkit_ROOT": "/usr/local/cuda-13.0",
         "Python3_EXECUTABLE": "${sourceDir}/.venv/bin/python",
-        "TORCH_CUDA_ARCH_LIST": "8.0",
+        "TORCH_CUDA_ARCH_LIST": "8.6",
+	"CMAKE_CUDA_ARCHITECTURES": "86",
 	"CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }      
+    },
+    {
+      "name": "angel-wsl-autotune",
+      "inherits": "angel-wsl",
+      "environment": {
+	"FA_BUFFER_UNROLL": "$penv{FA_BUFFER_UNROLL}",
+	"FA_BUFFER_NUM": "$penv{FA_BUFFER_NUM}",
+	"FA_WARPS_PER_BLOCK": "$penv{FA_WARPS_PER_BLOCK}",
+	"FA_MIN_CTAS_PER_SM": "$penv{FA_MIN_CTAS_PER_SM}"
       }
     }
   ],

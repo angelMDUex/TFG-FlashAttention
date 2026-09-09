@@ -83,6 +83,18 @@ add_library(tfg_fa_cuda MODULE
     src/cuda/torch_binding_ampere.cu
 )
 
+set(FA_BUFFER_UNROLL $ENV{FA_BUFFER_UNROLL})
+set(FA_BUFFER_NUM $ENV{FA_BUFFER_NUM})
+set(FA_WARPS_PER_BLOCK $ENV{FA_WARPS_PER_BLOCK})
+set(FA_MIN_CTAS_PER_SM $ENV{FA_MIN_CTAS_PER_SM})
+
+target_compile_definitions(tfg_fa_cuda PRIVATE
+    FA_BUFFER_UNROLL=${FA_BUFFER_UNROLL}
+    FA_BUFFER_NUM=${FA_BUFFER_NUM}
+    FA_WARPS_PER_BLOCK=${FA_WARPS_PER_BLOCK}
+    FA_MIN_CTAS_PER_SM=${FA_MIN_CTAS_PER_SM}
+)
+
 target_include_directories(tfg_fa_cuda
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include

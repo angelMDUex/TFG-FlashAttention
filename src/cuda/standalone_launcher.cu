@@ -34,7 +34,8 @@ int main()
     cudaMalloc(&O, seq_len * head_dim * sizeof(__nv_bfloat16));
 
     cudaStream_t stream = 0;
-    fa_launcher<seq_len, head_dim>(Q, K, V, O, stream);
+
+    fa_launcher<8192, 128>(Q, K, V, O, stream);
 
     cudaDeviceProp prop{};
     cudaGetDeviceProperties(&prop, 0);

@@ -10,11 +10,24 @@
 #define CP_ASYNC
 
 #include <cstdint>
-__device__ __forceinline__ void cp_async_16(void *smem_ptr, const void *gmem_ptr)
+
+__device__ __forceinline__ uint64_t make_evict_last_policy()
+{
+    uint64_t policy;
+
+    asm volatile("createpolicy.fractional.L2::evict_last.b64 %0, 1.0;\n" : "=l"(policy));
+
+    return policy;
+}
+
+__device__ __forceinline__ void cp_async_16(void *smem_ptr, const void *gmem_ptr, uint64_t policy)
 {
     uint32_t smem_addr = static_cast<uint32_t>(__cvta_generic_to_shared(smem_ptr));
 
-    asm volatile("cp.async.cg.shared.global [%0], [%1], 16;\n" : : "r"(smem_addr), "l"(gmem_ptr));
+    asm volatile("cp.async.cg.shared.global.L2::cache_hint [%0], [%1], 16, %2;\n"
+                 :
+                 : "r"(smem_addr), "l"(gmem_ptr), "l"(policy)
+                 : "memory");
 }
 
 __device__ __forceinline__ void cp_async_commit_group()

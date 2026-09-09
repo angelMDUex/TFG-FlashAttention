@@ -33,25 +33,56 @@
 #include <cuda_bf16.h>
 #include <cuda_fp16.h>
 #include <driver_types.h>
-#include <limits>
 #include <math_constants.h>
+#include <cuda/annotated_ptr>
 
-template <uint32_t M, uint32_t N, uint32_t scale, uint32_t buffer_num, uint32_t num_warp>
-__global__ void flash_attention(
+#ifndef FA_BUFFER_UNROLL
+    #define FA_BUFFER_UNROLL 10
+#endif
+
+#ifndef FA_BUFFER_NUM
+    #define FA_BUFFER_NUM 4
+#endif
+
+#ifndef FA_WARPS_PER_BLOCK
+    #define FA_WARPS_PER_BLOCK 4
+#endif
+
+#ifndef FA_MIN_CTAS_PER_SM
+    #define FA_MIN_CTAS_PER_SM 2
+#endif
+
+// Hacky workaround
+constexpr uint32_t FA_BUFFER_UNROLL_VALUE = FA_BUFFER_UNROLL;
+
+template <
+    uint32_t M,
+    uint32_t N,
+    uint32_t scale,
+    uint32_t buffer_num,
+    uint32_t num_warp,
+    uint32_t smem_size>
+__launch_bounds__(FA_WARPS_PER_BLOCK * 32, FA_MIN_CTAS_PER_SM) __global__ void flash_attention(
     const __nv_bfloat16 *Q,
     const __nv_bfloat16 *K,
     const __nv_bfloat16 *V,
     __nv_bfloat16 *output
 )
 {
-    // asm volatile(".pragma \"enable_smem_spilling\";");
+    asm volatile(".pragma \"enable_smem_spilling\";");
 
     Q = static_cast<const __nv_bfloat16 *>(__builtin_assume_aligned(Q, 16));
     K = static_cast<const __nv_bfloat16 *>(__builtin_assume_aligned(K, 16));
     V = static_cast<const __nv_bfloat16 *>(__builtin_assume_aligned(V, 16));
     output = static_cast<__nv_bfloat16 *>(__builtin_assume_aligned(output, 16));
 
-    extern __shared__ char smem[];
+    Q = cuda::associate_access_property(Q, cuda::access_property::streaming{});
+    // K = cuda::associate_access_property(K, cuda::access_property::persisting{});
+    // V = cuda::associate_access_property(V, cuda::access_property::persisting{});
+
+    uint64_t KV_policy = make_evict_last_policy();
+
+    __shared__ char smem[smem_size];
 
     auto tidx = blockIdx.x * blockDim.x + threadIdx.x;
     auto lane_id = tidx % 32;
@@ -92,7 +123,7 @@ __global__ void flash_attention(
     uint32_t buffer_idx;
 
     // Fetch the first `buffer_id` row tiles of K and V.
-#pragma unroll 4
+#pragma unroll
     for (uint32_t buffer_id = 0; buffer_id < buffer_num; buffer_id++)
     {
         ld_K_V_tile_m16_n8_x2_sram_swizzled<KVn_tile_num, N, num_warp>(
@@ -100,6 +131,7 @@ __global__ void flash_attention(
             V,
             k_buffer_ptr,
             v_buffer_ptr,
+            KV_policy,
             buffer_id,
             lane_id,
             block_warp_id,
@@ -108,8 +140,9 @@ __global__ void flash_attention(
     }
 
     // Fetch Q tiles corresponding to the warp.
-    q_tile = ld_Q_tile_m16_k16_regs_v2<N, qn_tile_num>(Q, warp_id, lane_id);
+    q_tile = ld_Q_tile_m16_k16_regs_v3<N, qn_tile_num>(Q, warp_id, lane_id);
 
+#pragma unroll FA_BUFFER_UNROLL_VALUE
     for (KVm_tile_id = 0; KVm_tile_id < KVm_tile_num; KVm_tile_id++)
     {
         // Reset s_tile.
@@ -344,6 +377,7 @@ __global__ void flash_attention(
                 V,
                 k_buffer_ptr,
                 v_buffer_ptr,
+                KV_policy,
                 KVm_tile_id + buffer_num,
                 lane_id,
                 block_warp_id,
@@ -380,9 +414,9 @@ void fa_launcher(
     cudaStream_t stream
 )
 {
-    constexpr uint32_t buffer_num = 4;
-    constexpr uint32_t threads = 128;
-    constexpr uint32_t warps_per_block = threads / 32;
+    constexpr uint32_t buffer_num = FA_BUFFER_NUM;
+    constexpr uint32_t threads = FA_WARPS_PER_BLOCK * 32;
+    constexpr uint32_t warps_per_block = FA_WARPS_PER_BLOCK;
     constexpr uint32_t num_warps = seq_len / 16;
     constexpr uint32_t blocks = (num_warps + warps_per_block - 1) / warps_per_block;
 
@@ -392,12 +426,13 @@ void fa_launcher(
 
     constexpr uint32_t scale = std::bit_cast<uint32_t>(0.08838834764831845f); // 1/sqrt(128)
 
-    cudaFuncSetAttribute(
-        flash_attention<seq_len, head_dim, scale, buffer_num, warps_per_block>,
-        cudaFuncAttributeMaxDynamicSharedMemorySize,
-        smem_size
-    ); // 99kb
+    // cudaFuncSetAttribute(
+    //     flash_attention<seq_len, head_dim, scale, buffer_num, warps_per_block>,
+    //     cudaFuncAttributeMaxDynamicSharedMemorySize,
+    //     smem_size
+    // )
+    // 99kb
 
-    flash_attention<seq_len, head_dim, scale, buffer_num, warps_per_block>
-        <<<blocks, threads, smem_size>>>(Q, K, V, O);
+    flash_attention<seq_len, head_dim, scale, buffer_num, warps_per_block, smem_size>
+        <<<blocks, threads, 0, stream>>>(Q, K, V, O);
 }

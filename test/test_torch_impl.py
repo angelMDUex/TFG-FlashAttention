@@ -69,8 +69,8 @@ def test_time_benchmark_sdpa():
     torch.cuda.manual_seed_all(0)
 
     d = 128
-    seq_lens = [1 << i for i in range(13, 21)]
-    repeats = 100
+    seq_lens = [8192, 16384, 32768]
+    repeats = 1000
 
     means = []
     stds = []
@@ -113,8 +113,8 @@ def test_time_benchmark_sdpa_cuddn():
     torch.cuda.manual_seed_all(0)
 
     d = 128
-    seq_lens = [1 << i for i in range(13, 21)]
-    repeats = 100
+    seq_lens = [8192, 16384, 32768]
+    repeats = 1000
 
     means = []
     stds = []

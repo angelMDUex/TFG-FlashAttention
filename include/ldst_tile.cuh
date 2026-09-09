@@ -17,6 +17,7 @@
     #include <cstdint>
     #include <cuda_bf16.h>
     #include <cuda_fp16.h>
+    #include <sys/types.h>
 
 __device__ __forceinline__ void
 ldmatrix_x4(uint32_t &r0, uint32_t &r1, uint32_t &r2, uint32_t &r3, const void *smem_ptr)
@@ -156,6 +157,179 @@ ld_Q_tile_m16_k16_regs_v2(const __nv_bfloat16 *Q, const uint32_t warp_id, const 
     return q_tile;
 }
 
+template <uint32_t qm_stride, uint32_t tiles_k>
+__device__ __forceinline__ pbf16_u32_m16_n16<tiles_k>
+ld_Q_tile_m16_k16_regs_v3(const __nv_bfloat16 *Q, const uint32_t warp_id, const uint32_t lane_id)
+{
+    static_assert(tiles_k == 8);
+
+    pbf16_u32_m16_n16<tiles_k> q_tile;
+
+    uint32_t warp_half = lane_id / 16;
+    uint32_t lane_half_id = lane_id % 16;
+
+    uint32_t reg[32];
+
+    // Cada lane carga 8 filas.
+    // Cada uint4 = 4 uint32 = 8 bf16.
+    #pragma unroll
+    for (uint32_t i = 0; i < 8; ++i)
+    {
+        const __nv_bfloat16 *Q_m_offset = Q + (warp_id * 16 + i + 8 * warp_half) * qm_stride;
+
+        const uint4 q = reinterpret_cast<const uint4 *>(Q_m_offset)[lane_half_id];
+
+        reg[i * 4 + 0] = q.x;
+        reg[i * 4 + 1] = q.y;
+        reg[i * 4 + 2] = q.z;
+        reg[i * 4 + 3] = q.w;
+    }
+
+    // Permutacion mariposa.
+    // distance: toma los valores 1, 2, 4, 8, 16.
+    // Con distancia 1:
+    // lane 0 <-> lane 1
+    // lane 2 <-> lane 3
+    // lane 4 <-> lane 5
+    // ...
+    // los registros se emparejan tambien
+    // reg[0] <-> reg[1]
+    // reg[2] <-> reg[3]
+    // reg[4] <-> reg[5]
+    // ...
+    // lane 0 carga:
+    // dato para lane0,
+    // dato para lane1,
+    // dato para lane2,
+    // dato para lane3...
+
+    // lane1 carga:
+    // dato para lane 0,
+    // dato para lane 1,
+    // dato para lane 2,
+    // ...
+    // la estructura actual es reg[lane_que_deberia_tener_este_mismo_registro] (Think about it !)
+    // `distance` define el tamaño de cada mitad del grupo.
+    // Por tanto, cada grupo completo tiene tamaño 2 * distance:
+    //
+    // distance = 1:
+    //   [0 | 1] [2 | 3] [4 | 5] [6 | 7] ...
+    //    0<->1   2<->3   4<->5   6<->7
+    //
+    // distance = 2:
+    //   [0 1 | 2 3] [4 5 | 6 7] ...
+    //    0<->2      4<->6
+    //    1<->3      5<->7
+    //
+    // distance = 4:
+    //   [0 1 2 3 | 4 5 6 7] [8 9 10 11 | 12 13 14 15] ...
+    //    0<->4                8 <->12
+    //    1<->5                9 <->13
+    //    2<->6               10 <->14
+    //    3<->7               11 <->15
+    //
+    // distance = 8:
+    //   [0..7 | 8..15] [16..23 | 24..31]
+    //
+    // distance = 16:
+    //   [0..15 | 16..31]
+    //
+    // Dentro de cada grupo:
+    //   base   = inicio del grupo
+    //   offset = posición dentro de la mitad izquierda
+    // Si nos fijamos, lane0 por ejemplo no comunica con lane3, por lo que no es posible
+    // intercambiar los registros.
+    // Sin embargo, el registro puede pasar del 3 al 2 con distancia 1, y del 2 al 0 cuando la
+    // distancia es 2.
+    //
+    #pragma unroll
+    for (uint32_t distance = 1; distance < 32; distance *= 2)
+    {
+        // Upper determina que registro envia cada lane.
+        // Los lanes del grupo de la derecha mandan uno, los de la izquierda, otros.
+        const bool upper = ((lane_id / distance) % 2) != 0;
+
+        // Base es el inicio del grupo.
+        // Todos los elementos del grupo intercambian registros.
+    #pragma unroll
+        for (uint32_t base = 0; base < 32; base += 2 * distance)
+        {
+            // Offset itera sobre cada elemento del grupo para intercambiar registros.
+    #pragma unroll
+            for (uint32_t offset = 0; offset < distance; ++offset)
+            {
+                // J0 es el elemento del grupo de la izquierda.
+                // J1 es el elemento del grupo de la derecha.
+                const uint32_t j0 = base + offset;
+                const uint32_t j1 = j0 + distance;
+
+                // Cmov
+                const uint32_t send = upper ? reg[j0] : reg[j1];
+
+                const uint32_t received = __shfl_xor_sync(0xFFFFFFFFu, send, distance);
+
+                // Cmov
+                reg[upper ? j0 : j1] = received;
+            }
+        }
+    }
+
+    #pragma unroll
+    for (uint32_t k = 0; k < 8; ++k)
+    {
+        q_tile.reg[k][0] = reg[2 * k];
+        q_tile.reg[k][1] = reg[16 + 2 * k];
+
+        q_tile.reg[k][2] = reg[2 * k + 1];
+        q_tile.reg[k][3] = reg[17 + 2 * k];
+    }
+
+    return q_tile;
+}
+
+template <uint32_t num_tiles, uint32_t Qm_stride, uint32_t num_warp>
+__device__ __forceinline__ void ld_Q_tile_m16_sram_swizzled(
+    const __nv_bfloat16 *Q,
+    void *q_buffer_ptr,
+    uint32_t Qm_tile,
+    uint32_t lane_id,
+    uint32_t warp_id,
+    uint8_t buffer_id
+)
+{
+    static_assert(Qm_stride % 8 == 0);
+    constexpr uint32_t BF16_PER_CP_ASYNC = 8;
+    constexpr uint32_t BYTES_PER_CP_ASYNC = BF16_PER_CP_ASYNC * sizeof(__nv_bfloat16);
+    constexpr uint32_t Q_TILE_ROWS = 16;
+    constexpr uint32_t CHUNKS_PER_ROW = Qm_stride / BF16_PER_CP_ASYNC;
+
+    static_assert(CHUNKS_PER_ROW == 16);
+
+    constexpr uint32_t Q_TILE_SIZE = Q_TILE_ROWS * Qm_stride * sizeof(__nv_bfloat16);
+    const uint32_t smem_place = buffer_id * Q_TILE_SIZE;
+
+    const uint32_t warp_half = lane_id / 16;
+    const uint32_t lane_chunk = lane_id % 16;
+
+    #pragma unroll
+    for (uint32_t Qm_row = 2 * warp_id + warp_half; Qm_row < Q_TILE_ROWS; Qm_row += 2 * num_warp)
+    {
+        const uint32_t logical_chunk = lane_chunk;
+        const uint32_t swizzled_chunk = logical_chunk ^ (Qm_row & 0x7);
+
+        const __nv_bfloat16 *Q_ptr =
+            Q + (Qm_tile * Q_TILE_ROWS + Qm_row) * Qm_stride + logical_chunk * BF16_PER_CP_ASYNC;
+
+        char *Q_sram_ptr = static_cast<char *>(q_buffer_ptr) + smem_place +
+                           Qm_row * Qm_stride * sizeof(__nv_bfloat16) +
+                           swizzled_chunk * BYTES_PER_CP_ASYNC;
+
+        // cp_async_16(Q_sram_ptr, Q_ptr);
+    }
+
+    cp_async_commit_group();
+}
+
 /**
  * @brief Copies 8x8 tiles asynchronously from global memory to sram.
  *
@@ -208,8 +382,8 @@ __device__ __forceinline__ void ld_K_V_tile_m16_n8_x2_sram(
         char *v_sram_ptr =
             ((char *)v_buffer_ptr) + smem_place + lane_id * 16 + i * SIZE_16x8_BF16_TILE * 2;
 
-        cp_async_16(k_sram_ptr, k_ptr);
-        cp_async_16(v_sram_ptr, v_ptr);
+        // cp_async_16(k_sram_ptr, k_ptr);
+        // cp_async_16(v_sram_ptr, v_ptr);
     }
     cp_async_commit_group();
 }
@@ -220,6 +394,7 @@ __device__ __forceinline__ void ld_K_V_tile_m16_n8_x2_sram_swizzled(
     const __nv_bfloat16 *V,
     void *k_buffer_ptr,
     void *v_buffer_ptr,
+    uint64_t KV_policy,
     uint32_t KVm_tile,
     uint32_t lane_id,
     uint32_t warp_id,
@@ -264,7 +439,7 @@ __device__ __forceinline__ void ld_K_V_tile_m16_n8_x2_sram_swizzled(
                             KVm_row * KVm_stride * sizeof(__nv_bfloat16) +
                             swizzled_chunk * BYTES_PER_CP_ASYNC;
 
-        cp_async_16(KV_sram_ptr, KV_ptr);
+        cp_async_16(KV_sram_ptr, KV_ptr, KV_policy);
     }
 
     cp_async_commit_group();
