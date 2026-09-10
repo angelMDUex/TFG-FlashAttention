@@ -1,0 +1,50 @@
+[
+{
+  "directory": "/root/TFG-FlashAttention/build",
+  "command": "/usr/local/cuda-13/bin/nvcc -forward-unknown-to-host-compiler  -I/root/TFG-FlashAttention/include  -DONNX_NAMESPACE=onnx_c2 -gencode arch=compute_86,code=sm_86 -Xcudafe --diag_suppress=cc_clobber_ignored,--diag_suppress=field_without_dll_interface,--diag_suppress=base_class_has_different_dll_interface,--diag_suppress=dll_interface_conflict_none_assumed,--diag_suppress=dll_interface_conflict_dllexport_assumed,--diag_suppress=bad_friend_decl --expt-relaxed-constexpr --expt-extended-lambda -O3 -DNDEBUG -std=c++20 -O3 -Xptxas=-v -x cu -c /root/TFG-FlashAttention/src/cuda/standalone_launcher.cu -o CMakeFiles/TFG-FA-Launcher.dir/src/cuda/standalone_launcher.cu.o",
+  "file": "/root/TFG-FlashAttention/src/cuda/standalone_launcher.cu",
+  "output": "CMakeFiles/TFG-FA-Launcher.dir/src/cuda/standalone_launcher.cu.o"
+},
+{
+  "directory": "/root/TFG-FlashAttention/build",
+  "command": "/usr/local/cuda-13/bin/nvcc -forward-unknown-to-host-compiler -DFA_BUFFER_NUM=2 -DFA_BUFFER_UNROLL=9 -DFA_MIN_CTAS_PER_SM=3 -DFA_WARPS_PER_BLOCK=2 -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_NVSHMEM -DUSE_RPC -DUSE_TENSORPIPE -Dtfg_fa_cuda_EXPORTS -I/root/TFG-FlashAttention/include -isystem /root/TFG-FlashAttention/.venv/lib/python3.12/site-packages/torch/include -isystem /root/TFG-FlashAttention/.venv/lib/python3.12/site-packages/torch/include/torch/csrc/api/include -isystem /usr/local/cuda-13/include -isystem /root/.local/share/uv/python/cpython-3.12-linux-x86_64-gnu/include/python3.12  -DONNX_NAMESPACE=onnx_c2 -gencode arch=compute_86,code=sm_86 -Xcudafe --diag_suppress=cc_clobber_ignored,--diag_suppress=field_without_dll_interface,--diag_suppress=base_class_has_different_dll_interface,--diag_suppress=dll_interface_conflict_none_assumed,--diag_suppress=dll_interface_conflict_dllexport_assumed,--diag_suppress=bad_friend_decl --expt-relaxed-constexpr --expt-extended-lambda -O3 -DNDEBUG -std=c++20 -Xcompiler=-fPIC -O3 -Xptxas=-v -x cu -c /root/TFG-FlashAttention/src/cuda/torch_binding_ampere.cu -o CMakeFiles/tfg_fa_cuda.dir/src/cuda/torch_binding_ampere.cu.o",
+  "file": "/root/TFG-FlashAttention/src/cuda/torch_binding_ampere.cu",
+  "output": "CMakeFiles/tfg_fa_cuda.dir/src/cuda/torch_binding_ampere.cu.o"
+},
+{
+  "directory": "/root/TFG-FlashAttention/build/_deps/googletest-build/googlemock",
+  "command": "/usr/bin/c++  -I/root/TFG-FlashAttention/build/_deps/googletest-src/googlemock/include -I/root/TFG-FlashAttention/build/_deps/googletest-src/googlemock -isystem /root/TFG-FlashAttention/build/_deps/googletest-src/googletest/include -isystem /root/TFG-FlashAttention/build/_deps/googletest-src/googletest -O3 -DNDEBUG -std=c++20 -Wall -Wshadow -Wundef -Wno-error=dangling-else -DGTEST_HAS_PTHREAD=1 -fexceptions -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -o CMakeFiles/gmock.dir/src/gmock-all.cc.o -c /root/TFG-FlashAttention/build/_deps/googletest-src/googlemock/src/gmock-all.cc",
+  "file": "/root/TFG-FlashAttention/build/_deps/googletest-src/googlemock/src/gmock-all.cc",
+  "output": "_deps/googletest-build/googlemock/CMakeFiles/gmock.dir/src/gmock-all.cc.o"
+},
+{
+  "directory": "/root/TFG-FlashAttention/build/_deps/googletest-build/googlemock",
+  "command": "/usr/bin/c++  -isystem /root/TFG-FlashAttention/build/_deps/googletest-src/googlemock/include -isystem /root/TFG-FlashAttention/build/_deps/googletest-src/googlemock -isystem /root/TFG-FlashAttention/build/_deps/googletest-src/googletest/include -isystem /root/TFG-FlashAttention/build/_deps/googletest-src/googletest -O3 -DNDEBUG -std=c++20 -Wall -Wshadow -Wundef -Wno-error=dangling-else -DGTEST_HAS_PTHREAD=1 -fexceptions -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -o CMakeFiles/gmock_main.dir/src/gmock_main.cc.o -c /root/TFG-FlashAttention/build/_deps/googletest-src/googlemock/src/gmock_main.cc",
+  "file": "/root/TFG-FlashAttention/build/_deps/googletest-src/googlemock/src/gmock_main.cc",
+  "output": "_deps/googletest-build/googlemock/CMakeFiles/gmock_main.dir/src/gmock_main.cc.o"
+},
+{
+  "directory": "/root/TFG-FlashAttention/build/_deps/googletest-build/googletest",
+  "command": "/usr/bin/c++  -I/root/TFG-FlashAttention/build/_deps/googletest-src/googletest/include -I/root/TFG-FlashAttention/build/_deps/googletest-src/googletest -O3 -DNDEBUG -std=c++20 -Wall -Wshadow -Wundef -Wno-error=dangling-else -DGTEST_HAS_PTHREAD=1 -fexceptions -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -o CMakeFiles/gtest.dir/src/gtest-all.cc.o -c /root/TFG-FlashAttention/build/_deps/googletest-src/googletest/src/gtest-all.cc",
+  "file": "/root/TFG-FlashAttention/build/_deps/googletest-src/googletest/src/gtest-all.cc",
+  "output": "_deps/googletest-build/googletest/CMakeFiles/gtest.dir/src/gtest-all.cc.o"
+},
+{
+  "directory": "/root/TFG-FlashAttention/build/_deps/googletest-build/googletest",
+  "command": "/usr/bin/c++  -isystem /root/TFG-FlashAttention/build/_deps/googletest-src/googletest/include -isystem /root/TFG-FlashAttention/build/_deps/googletest-src/googletest -O3 -DNDEBUG -std=c++20 -Wall -Wshadow -Wundef -Wno-error=dangling-else -DGTEST_HAS_PTHREAD=1 -fexceptions -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -o CMakeFiles/gtest_main.dir/src/gtest_main.cc.o -c /root/TFG-FlashAttention/build/_deps/googletest-src/googletest/src/gtest_main.cc",
+  "file": "/root/TFG-FlashAttention/build/_deps/googletest-src/googletest/src/gtest_main.cc",
+  "output": "_deps/googletest-build/googletest/CMakeFiles/gtest_main.dir/src/gtest_main.cc.o"
+},
+{
+  "directory": "/root/TFG-FlashAttention/build/test",
+  "command": "/usr/local/cuda-13/bin/nvcc -forward-unknown-to-host-compiler  -I/root/TFG-FlashAttention/include -isystem /root/TFG-FlashAttention/build/_deps/googletest-src/googletest/include -isystem /root/TFG-FlashAttention/build/_deps/googletest-src/googletest  -DONNX_NAMESPACE=onnx_c2 -gencode arch=compute_86,code=sm_86 -Xcudafe --diag_suppress=cc_clobber_ignored,--diag_suppress=field_without_dll_interface,--diag_suppress=base_class_has_different_dll_interface,--diag_suppress=dll_interface_conflict_none_assumed,--diag_suppress=dll_interface_conflict_dllexport_assumed,--diag_suppress=bad_friend_decl --expt-relaxed-constexpr --expt-extended-lambda -O3 -DNDEBUG -std=c++20 -x cu -c /root/TFG-FlashAttention/test/test_tile_load.cu -o CMakeFiles/cuda_tests.dir/test_tile_load.cu.o",
+  "file": "/root/TFG-FlashAttention/test/test_tile_load.cu",
+  "output": "test/CMakeFiles/cuda_tests.dir/test_tile_load.cu.o"
+},
+{
+  "directory": "/root/TFG-FlashAttention/build/test",
+  "command": "/usr/local/cuda-13/bin/nvcc -forward-unknown-to-host-compiler  -I/root/TFG-FlashAttention/include -isystem /root/TFG-FlashAttention/build/_deps/googletest-src/googletest/include -isystem /root/TFG-FlashAttention/build/_deps/googletest-src/googletest  -DONNX_NAMESPACE=onnx_c2 -gencode arch=compute_86,code=sm_86 -Xcudafe --diag_suppress=cc_clobber_ignored,--diag_suppress=field_without_dll_interface,--diag_suppress=base_class_has_different_dll_interface,--diag_suppress=dll_interface_conflict_none_assumed,--diag_suppress=dll_interface_conflict_dllexport_assumed,--diag_suppress=bad_friend_decl --expt-relaxed-constexpr --expt-extended-lambda -O3 -DNDEBUG -std=c++20 -x cu -c /root/TFG-FlashAttention/test/test_mma.cu -o CMakeFiles/cuda_tests.dir/test_mma.cu.o",
+  "file": "/root/TFG-FlashAttention/test/test_mma.cu",
+  "output": "test/CMakeFiles/cuda_tests.dir/test_mma.cu.o"
+}
+]

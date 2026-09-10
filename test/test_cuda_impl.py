@@ -2,9 +2,14 @@ import torch
 import nvtx
 import pytest
 import torch.nn.functional as F
+import csv
 
 from tfg_fa import tfg_fa_cuda
+from pathlib import Path
+from datetime import datetime
 
+ROOT = Path.cwd().resolve()
+CSV_PATH = ROOT / "profile"
 
 N = 8192
 D = 128
@@ -222,38 +227,47 @@ def test_benchmark_cuda():
     torch.cuda.manual_seed_all(0)
 
     d = 128
-    seq_lens = [8192, 16384, 32768]
-    repeats = 1000
+    seq_lens = [8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576]
+    repeats = 5000
 
     means = []
     stds = []
 
-    for n in seq_lens:
-        q = torch.randn((n, d), device="cuda", dtype=torch.bfloat16)
-        k = torch.randn_like(q)
-        v = torch.randn_like(q)
+    csv_path = Path(CSV_PATH).with_name("cuda_tiempo_benchmark_flash_attention.csv")
 
-        # Warmup
-        tfg_fa_cuda.flash_attention(q, k, v)
-        torch.cuda.synchronize()
+    with csv_path.open("w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["seq_len", "repeat", "timestamp", "time_ms"])
 
-        times = []
+        for n in seq_lens:
+            q = torch.randn((n, d), device="cuda", dtype=torch.bfloat16)
+            k = torch.randn_like(q)
+            v = torch.randn_like(q)
 
-        for _ in range(repeats):
-            start = torch.cuda.Event(enable_timing=True)
-            end = torch.cuda.Event(enable_timing=True)
-
-            start.record()
             tfg_fa_cuda.flash_attention(q, k, v)
-            end.record()
-
             torch.cuda.synchronize()
-            times.append(start.elapsed_time(end))
 
-        times = torch.tensor(times)
+            times = []
 
-        means.append(times.mean().item())
-        stds.append(times.std().item())
+            for i in range(repeats):
+                start = torch.cuda.Event(enable_timing=True)
+                end = torch.cuda.Event(enable_timing=True)
+
+                start.record()
+                tfg_fa_cuda.flash_attention(q, k, v)
+                end.record()
+
+                torch.cuda.synchronize()
+
+                time_ms = start.elapsed_time(end)
+                timestamp = datetime.now().isoformat(timespec="milliseconds")
+
+                times.append(time_ms)
+                writer.writerow([n, i, timestamp, time_ms])
+
+            times = torch.tensor(times)
+            means.append(times.mean().item())
+            stds.append(times.std().item())
 
     print("seq_lens =", seq_lens)
     print("means_ms =", means)
