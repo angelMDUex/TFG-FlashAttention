@@ -2,12 +2,17 @@ import torch
 import nvtx
 import pytest
 import torch.nn.functional as F
+import csv
 
+from pathlib import Path
 from tfg_fa import tfg_fa_cuda
 
 
 N = 8192
 D = 128
+
+ROOT = Path.cwd().resolve()
+CSV_PATH = ROOT / "profile"
 
 
 def test_cuda_ones_v():
@@ -58,7 +63,7 @@ def test_cuda_uniform_attention():
         atol=2e-2,
     )
 
-
+@pytest.mark.validez
 def test_cuda_flash_attention_against_sdpa():
     torch.manual_seed(0)
 
@@ -199,7 +204,7 @@ def test_cuda_attention_weight_layout():
 def test_profile_cuda():
     torch.manual_seed(0)
 
-    n = 8192
+    n = 65536
     d = 128
 
     q = torch.randn((n, d), device="cuda", dtype=torch.bfloat16)
@@ -216,44 +221,74 @@ def test_profile_cuda():
 
     torch.cuda.synchronize()
 
+
+@pytest.mark.profile
+def test_profile_cuda_v2(seq_len):
+    torch.manual_seed(0)
+
+    n = seq_len
+    d = 128
+
+    q = torch.randn((n, d), device="cuda", dtype=torch.bfloat16)
+    k = torch.randn_like(q)
+    v = torch.randn_like(q)
+
+    # Warmup
+    tfg_fa_cuda.flash_attention(q, k, v)
+    torch.cuda.synchronize()
+
+    # Único launch que queremos perfilar
+    with nvtx.annotate("profile_fa_cuda"):
+        tfg_fa_cuda.flash_attention(q, k, v)
+
+    torch.cuda.synchronize()
+
+
 @pytest.mark.tiempo
 def test_benchmark_cuda():
     torch.manual_seed(0)
     torch.cuda.manual_seed_all(0)
 
     d = 128
-    seq_lens = [8192, 16384, 32768]
-    repeats = 1000
+    seq_lens = [8192, 16384, 32768, 65536] #131072, 262144, 524288, 1048576]
+    repeats = 500
 
     means = []
     stds = []
 
-    for n in seq_lens:
-        q = torch.randn((n, d), device="cuda", dtype=torch.bfloat16)
-        k = torch.randn_like(q)
-        v = torch.randn_like(q)
+    csv_path = Path(CSV_PATH).with_name("cuda_tiempo_benchmark_flash_attention.csv")
 
-        # Warmup
-        tfg_fa_cuda.flash_attention(q, k, v)
-        torch.cuda.synchronize()
+    with csv_path.open("w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["seq_len", "repeat", "time_ms"])
 
-        times = []
+        for n in seq_lens:
+            q = torch.randn((n, d), device="cuda", dtype=torch.bfloat16)
+            k = torch.randn_like(q)
+            v = torch.randn_like(q)
 
-        for _ in range(repeats):
-            start = torch.cuda.Event(enable_timing=True)
-            end = torch.cuda.Event(enable_timing=True)
-
-            start.record()
             tfg_fa_cuda.flash_attention(q, k, v)
-            end.record()
-
             torch.cuda.synchronize()
-            times.append(start.elapsed_time(end))
 
-        times = torch.tensor(times)
+            times = []
 
-        means.append(times.mean().item())
-        stds.append(times.std().item())
+            for i in range(repeats):
+                start = torch.cuda.Event(enable_timing=True)
+                end = torch.cuda.Event(enable_timing=True)
+
+                start.record()
+                tfg_fa_cuda.flash_attention(q, k, v)
+                end.record()
+
+                torch.cuda.synchronize()
+
+                time_ms = start.elapsed_time(end)
+                times.append(time_ms)
+                writer.writerow([n, i, time_ms])
+
+            times = torch.tensor(times)
+            means.append(times.mean().item())
+            stds.append(times.std().item())
 
     print("seq_lens =", seq_lens)
     print("means_ms =", means)

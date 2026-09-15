@@ -20,7 +20,8 @@
 	"FA_BUFFER_UNROLL": "$penv{FA_BUFFER_UNROLL}",
 	"FA_BUFFER_NUM": "$penv{FA_BUFFER_NUM}",
 	"FA_WARPS_PER_BLOCK": "$penv{FA_WARPS_PER_BLOCK}",
-	"FA_MIN_CTAS_PER_SM": "$penv{FA_MIN_CTAS_PER_SM}"
+	"FA_MIN_CTAS_PER_SM": "$penv{FA_MIN_CTAS_PER_SM}",
+	"FA_UNCACHED" : "$penv{FA_UNCACHED}"
       }
     }
   ],

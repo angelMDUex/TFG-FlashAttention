@@ -24,10 +24,12 @@ __device__ __forceinline__ void cp_async_16(void *smem_ptr, const void *gmem_ptr
 {
     uint32_t smem_addr = static_cast<uint32_t>(__cvta_generic_to_shared(smem_ptr));
 
-    asm volatile("cp.async.cg.shared.global.L2::cache_hint [%0], [%1], 16, %2;\n"
+    asm volatile("cp.async.cg.shared.global.L2::cache_hint.L2::256B "
+                 "[%0], [%1], 16, %2;\n"
                  :
                  : "r"(smem_addr), "l"(gmem_ptr), "l"(policy)
                  : "memory");
+    ;
 }
 
 __device__ __forceinline__ void cp_async_commit_group()

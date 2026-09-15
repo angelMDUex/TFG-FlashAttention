@@ -7,16 +7,17 @@
  */
 
 #ifndef LDST_TILE
-
     #define LDST_FILE
 
     #include "common.cuh"
     #include "tile_def.cuh"
     #include "cp_async.cuh"
+    #include "helpers.cuh"
 
     #include <cstdint>
     #include <cuda_bf16.h>
     #include <cuda_fp16.h>
+    #include <cuda_runtime.h>
     #include <sys/types.h>
 
 __device__ __forceinline__ void
@@ -65,8 +66,11 @@ __device__ __forceinline__ void ldmatrix_x2(uint32_t &r0, uint32_t &r1, const vo
  * @return q_tile. Registers holding thread's part of the Q tile.
  */
 template <uint32_t qm_stride, uint32_t tiles_k>
-__device__ __forceinline__ pbf16_u32_m16_n16<tiles_k>
-ld_Q_tile_m16_k16_regs(const __nv_bfloat16 *Q, const uint32_t warp_id, const uint32_t lane_id)
+__device__ __forceinline__ pbf16_u32_m16_n16<tiles_k> ld_Q_tile_m16_k16_regs(
+    const __nv_bfloat16 *__restrict__ Q,
+    const uint32_t warp_id,
+    const uint32_t lane_id
+)
 {
     constexpr uint32_t tm8x8_in_16x16 = 16 / 8;
     constexpr uint32_t tn8x8_in_16x16 = 16 / 8;
@@ -101,8 +105,11 @@ ld_Q_tile_m16_k16_regs(const __nv_bfloat16 *Q, const uint32_t warp_id, const uin
 }
 
 template <uint32_t qm_stride, uint32_t tiles_k>
-__device__ __forceinline__ pbf16_u32_m16_n16<tiles_k>
-ld_Q_tile_m16_k16_regs_v2(const __nv_bfloat16 *Q, const uint32_t warp_id, const uint32_t lane_id)
+__device__ __forceinline__ pbf16_u32_m16_n16<tiles_k> ld_Q_tile_m16_k16_regs_v2(
+    const __nv_bfloat16 *__restrict__ Q,
+    const uint32_t warp_id,
+    const uint32_t lane_id
+)
 {
     pbf16_u32_m16_n16<tiles_k> q_tile;
 
@@ -157,9 +164,12 @@ ld_Q_tile_m16_k16_regs_v2(const __nv_bfloat16 *Q, const uint32_t warp_id, const 
     return q_tile;
 }
 
-template <uint32_t qm_stride, uint32_t tiles_k>
-__device__ __forceinline__ pbf16_u32_m16_n16<tiles_k>
-ld_Q_tile_m16_k16_regs_v3(const __nv_bfloat16 *Q, const uint32_t warp_id, const uint32_t lane_id)
+template <uint32_t qm_stride, uint32_t tiles_k, uint32_t UNCACHED>
+__device__ __forceinline__ pbf16_u32_m16_n16<tiles_k> ld_Q_tile_m16_k16_regs_v3(
+    const __nv_bfloat16 *__restrict__ Q,
+    const uint32_t warp_id,
+    const uint32_t lane_id
+)
 {
     static_assert(tiles_k == 8);
 
@@ -176,8 +186,16 @@ ld_Q_tile_m16_k16_regs_v3(const __nv_bfloat16 *Q, const uint32_t warp_id, const 
     for (uint32_t i = 0; i < 8; ++i)
     {
         const __nv_bfloat16 *Q_m_offset = Q + (warp_id * 16 + i + 8 * warp_half) * qm_stride;
+        uint4 q;
 
-        const uint4 q = reinterpret_cast<const uint4 *>(Q_m_offset)[lane_half_id];
+        if constexpr (UNCACHED == 1)
+        {
+            q = __ldcg(reinterpret_cast<const uint4 *>(Q_m_offset) + lane_half_id);
+        }
+        else
+        {
+            q = __ldca(reinterpret_cast<const uint4 *>(Q_m_offset) + lane_half_id);
+        }
 
         reg[i * 4 + 0] = q.x;
         reg[i * 4 + 1] = q.y;
@@ -241,38 +259,15 @@ ld_Q_tile_m16_k16_regs_v3(const __nv_bfloat16 *Q, const uint32_t warp_id, const 
     // intercambiar los registros.
     // Sin embargo, el registro puede pasar del 3 al 2 con distancia 1, y del 2 al 0 cuando la
     // distancia es 2.
-    //
-    #pragma unroll
-    for (uint32_t distance = 1; distance < 32; distance *= 2)
-    {
-        // Upper determina que registro envia cada lane.
-        // Los lanes del grupo de la derecha mandan uno, los de la izquierda, otros.
-        const bool upper = ((lane_id / distance) % 2) != 0;
 
-        // Base es el inicio del grupo.
-        // Todos los elementos del grupo intercambian registros.
-    #pragma unroll
-        for (uint32_t base = 0; base < 32; base += 2 * distance)
-        {
-            // Offset itera sobre cada elemento del grupo para intercambiar registros.
-    #pragma unroll
-            for (uint32_t offset = 0; offset < distance; ++offset)
-            {
-                // J0 es el elemento del grupo de la izquierda.
-                // J1 es el elemento del grupo de la derecha.
-                const uint32_t j0 = base + offset;
-                const uint32_t j1 = j0 + distance;
-
-                // Cmov
-                const uint32_t send = upper ? reg[j0] : reg[j1];
-
-                const uint32_t received = __shfl_xor_sync(0xFFFFFFFFu, send, distance);
-
-                // Cmov
-                reg[upper ? j0 : j1] = received;
-            }
-        }
-    }
+    // Angel note: This is because the compiler is failing to unroll the loops. Detects distance
+    // as a dynamic variable. No dynamic indexing is done here, and everything can be done with
+    // predicated instructions.
+    __butterfly_stage<1>(reg, lane_id);
+    __butterfly_stage<2>(reg, lane_id);
+    __butterfly_stage<4>(reg, lane_id);
+    __butterfly_stage<8>(reg, lane_id);
+    __butterfly_stage<16>(reg, lane_id);
 
     #pragma unroll
     for (uint32_t k = 0; k < 8; ++k)
@@ -289,8 +284,8 @@ ld_Q_tile_m16_k16_regs_v3(const __nv_bfloat16 *Q, const uint32_t warp_id, const 
 
 template <uint32_t num_tiles, uint32_t Qm_stride, uint32_t num_warp>
 __device__ __forceinline__ void ld_Q_tile_m16_sram_swizzled(
-    const __nv_bfloat16 *Q,
-    void *q_buffer_ptr,
+    const __nv_bfloat16 *__restrict__ Q,
+    void *__restrict__ q_buffer_ptr,
     uint32_t Qm_tile,
     uint32_t lane_id,
     uint32_t warp_id,
@@ -346,10 +341,10 @@ __device__ __forceinline__ void ld_Q_tile_m16_sram_swizzled(
 
 template <uint32_t num_tiles, uint32_t KVm_stride, uint32_t num_warp>
 __device__ __forceinline__ void ld_K_V_tile_m16_n8_x2_sram(
-    const __nv_bfloat16 *K,
-    const __nv_bfloat16 *V,
-    void *k_buffer_ptr,
-    void *v_buffer_ptr,
+    const __nv_bfloat16 *__restrict__ K,
+    const __nv_bfloat16 *__restrict__ V,
+    void *__restrict__ k_buffer_ptr,
+    void *__restrict__ v_buffer_ptr,
     uint32_t KVm_tile,
     uint32_t lane_id,
     uint32_t warp_id,
@@ -390,10 +385,10 @@ __device__ __forceinline__ void ld_K_V_tile_m16_n8_x2_sram(
 
 template <uint32_t num_tiles, uint32_t KVm_stride, uint32_t num_warp>
 __device__ __forceinline__ void ld_K_V_tile_m16_n8_x2_sram_swizzled(
-    const __nv_bfloat16 *K,
-    const __nv_bfloat16 *V,
-    void *k_buffer_ptr,
-    void *v_buffer_ptr,
+    const __nv_bfloat16 *__restrict__ K,
+    const __nv_bfloat16 *__restrict__ V,
+    void *__restrict__ k_buffer_ptr,
+    void *__restrict__ v_buffer_ptr,
     uint64_t KV_policy,
     uint32_t KVm_tile,
     uint32_t lane_id,
@@ -445,11 +440,9 @@ __device__ __forceinline__ void ld_K_V_tile_m16_n8_x2_sram_swizzled(
     cp_async_commit_group();
 }
 
-#endif
-
 template <uint32_t N, uint32_t KVn_tile_num>
 __device__ __forceinline__ void st_O_tile_m16_n8_regs_coalesced(
-    __nv_bfloat16 *output,
+    __nv_bfloat16 *__restrict__ output,
     const fp32_m16_n8<KVn_tile_num> &o_tile,
     uint32_t warp_id,
     uint32_t lane_id
@@ -469,7 +462,7 @@ __device__ __forceinline__ void st_O_tile_m16_n8_regs_coalesced(
     uint32_t dst_tile = lane_id / 4; // 0..7
     uint32_t lane_n = lane_id % 4;   // pair inside an m16n8 tile
 
-#pragma unroll
+    #pragma unroll
     for (uint32_t row = 0; row < 16; ++row)
     {
         uint32_t row_half = row / 8;
@@ -481,7 +474,7 @@ __device__ __forceinline__ void st_O_tile_m16_n8_regs_coalesced(
         // in the original MMA fragment layout.
         uint32_t src_lane = row_8x8 * 4 + lane_n;
 
-#pragma unroll
+    #pragma unroll
         for (uint32_t tile_base = 0; tile_base < KVn_tile_num; tile_base += 8)
         {
             uint32_t packed = 0;
@@ -490,7 +483,7 @@ __device__ __forceinline__ void st_O_tile_m16_n8_regs_coalesced(
             // registers distributed over tiles
             //             ->
             // 32 lanes containing 64 consecutive BF16.
-#pragma unroll
+    #pragma unroll
             for (uint32_t t = 0; t < 8; ++t)
             {
                 union
@@ -517,3 +510,157 @@ __device__ __forceinline__ void st_O_tile_m16_n8_regs_coalesced(
         }
     }
 }
+
+template <uint32_t KVm_stride, uint32_t num_warp>
+__device__ __forceinline__ void prefetch_KV_tile_m16_sram_swizzled(
+    const __nv_bfloat16 *__restrict__ src,
+    void *__restrict__ smem_slot,
+    uint64_t policy,
+    uint32_t KVm_tile,
+    uint32_t lane_id,
+    uint32_t block_warp_id
+)
+{
+    static_assert(KVm_stride % 8 == 0);
+
+    constexpr uint32_t BF16_PER_CP_ASYNC = 8;
+    constexpr uint32_t BYTES_PER_CP_ASYNC = BF16_PER_CP_ASYNC * sizeof(__nv_bfloat16);
+
+    constexpr uint32_t TILE_ROWS = 16;
+    constexpr uint32_t CHUNKS_PER_ROW = KVm_stride / BF16_PER_CP_ASYNC;
+
+    static_assert(CHUNKS_PER_ROW == 16);
+
+    // Each half-warp loads one complete row:
+    //
+    // lanes  0..15 -> row A
+    // lanes 16..31 -> row B
+    //
+    uint32_t half = lane_id >> 4;
+    uint32_t lane_chunk = lane_id & 15;
+
+    #pragma unroll
+    for (uint32_t row = 2 * block_warp_id + half; row < TILE_ROWS; row += 2 * num_warp)
+    {
+        uint32_t logical_chunk = lane_chunk;
+        uint32_t swizzled_chunk = logical_chunk ^ (row & 0x7);
+
+        const __nv_bfloat16 *src_ptr =
+            src + (KVm_tile * TILE_ROWS + row) * KVm_stride + logical_chunk * BF16_PER_CP_ASYNC;
+
+        char *dst_ptr = static_cast<char *>(smem_slot) + row * KVm_stride * sizeof(__nv_bfloat16) +
+                        swizzled_chunk * BYTES_PER_CP_ASYNC;
+
+        cp_async_16(dst_ptr, src_ptr, policy);
+    }
+
+    cp_async_commit_group();
+}
+
+template <uint32_t N, uint32_t UNCACHED>
+__device__ __forceinline__ void st_O_tile_m16_n128_regs_v2(
+    __nv_bfloat16 *__restrict__ output,
+    const fp32_m16_n8<16> &o_tile,
+    const uint32_t warp_id,
+    const uint32_t lane_id
+)
+{
+    static_assert(REGISTERS_PER_THREAD_8x8_FP32_TILE == 2);
+
+    uint32_t reg[32];
+
+    // --------------------------------------------------------
+    // Reconstruir el layout equivalente a q_tile.reg[][].
+    //
+    // Dos m16n8 consecutivos forman un m16n16 lógico:
+    //
+    //   tile 2*k     -> primeras  8 columnas
+    //   tile 2*k + 1 -> siguientes 8 columnas
+    //
+    // --------------------------------------------------------
+
+    #pragma unroll
+    for (uint32_t k = 0; k < 8; ++k)
+    {
+        union
+        {
+            __nv_bfloat162 bf16;
+            uint32_t u32;
+        } v0, v1, v2, v3;
+
+        // m16n8 #2k, filas 0..7
+        v0.bf16 = __floats2bfloat162_rn(o_tile.reg[2 * k][0], o_tile.reg[2 * k][1]);
+
+        // m16n8 #2k, filas 8..15
+        v1.bf16 = __floats2bfloat162_rn(o_tile.reg[2 * k][2], o_tile.reg[2 * k][3]);
+
+        // m16n8 #2k+1, filas 0..7
+        v2.bf16 = __floats2bfloat162_rn(o_tile.reg[2 * k + 1][0], o_tile.reg[2 * k + 1][1]);
+
+        // m16n8 #2k+1, filas 8..15
+        v3.bf16 = __floats2bfloat162_rn(o_tile.reg[2 * k + 1][2], o_tile.reg[2 * k + 1][3]);
+
+        // Inverso exacto del final de ld_Q_tile_m16_k16_regs_v3().
+        reg[2 * k] = v0.u32;
+        reg[16 + 2 * k] = v1.u32;
+
+        reg[2 * k + 1] = v2.u32;
+        reg[17 + 2 * k] = v3.u32;
+    }
+
+    // --------------------------------------------------------
+    // Misma transposición butterfly 32x32.
+    //
+    // Es auto-inversa:
+    //
+    //     reg[lane][idx]
+    //         ↓ transpose
+    //     reg[idx][lane]
+    //         ↓ transpose
+    //     reg[lane][idx]
+    //
+    // --------------------------------------------------------
+
+    // Angel note: This is because the compiler is failing to unroll the loops. Detects distance
+    // as a dynamic variable. No dynamic indexing is done here, and everything can be done with
+    // predicated instructions.
+    __butterfly_stage<1>(reg, lane_id);
+    __butterfly_stage<2>(reg, lane_id);
+    __butterfly_stage<4>(reg, lane_id);
+    __butterfly_stage<8>(reg, lane_id);
+    __butterfly_stage<16>(reg, lane_id);
+
+    // --------------------------------------------------------
+    // Ahora estamos exactamente en el layout original
+    // de memoria que tenía ld_Q antes de la transposición.
+    //
+    // lane  0..15 -> rows 0..7
+    // lane 16..31 -> rows 8..15
+    //
+    // Cada lane escribe uint4 = 8 BF16.
+    //
+    // --------------------------------------------------------
+
+    const uint32_t warp_half = lane_id / 16;
+
+    const uint32_t lane_half_id = lane_id % 16;
+
+    #pragma unroll
+    for (uint32_t i = 0; i < 8; ++i)
+    {
+        const uint4 v = make_uint4(reg[i * 4 + 0], reg[i * 4 + 1], reg[i * 4 + 2], reg[i * 4 + 3]);
+
+        __nv_bfloat16 *O_m_offset = output + (warp_id * 16 + i + 8 * warp_half) * N;
+
+        if constexpr (UNCACHED == 1)
+        {
+            __stcg(reinterpret_cast<uint4 *>(O_m_offset) + lane_half_id, v);
+        }
+        else
+        {
+            __stwb(reinterpret_cast<uint4 *>(O_m_offset) + lane_half_id, v);
+        }
+    }
+}
+
+#endif

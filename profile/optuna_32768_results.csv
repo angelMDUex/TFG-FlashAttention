@@ -1,0 +1,6 @@
+number,value,params_buffer_num,params_buffer_unroll,params_ctas_per_sm,params_uncached,params_warps_per_block,user_attrs_registers,user_attrs_spill_loads_bytes,user_attrs_spill_stores_bytes,user_attrs_stack_bytes,state
+0,,5,11,5,0,12,,,,,PRUNED
+1,,6,9,4,1,15,,,,,PRUNED
+2,,2,14,5,0,15,,,,,PRUNED
+3,,6,13,7,0,14,,,,,PRUNED
+4,,2,7,1,0,11,164.0,0.0,0.0,0.0,PRUNED

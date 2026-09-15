@@ -10,10 +10,11 @@
         "CMAKE_CUDA_ARCHITECTURES": "86"
       },
       "environment": {
-        "FA_BUFFER_UNROLL": "9",
-        "FA_BUFFER_NUM": "2",
-        "FA_WARPS_PER_BLOCK": "2",
-        "FA_MIN_CTAS_PER_SM": "3"
+        "FA_BUFFER_UNROLL": "8",
+        "FA_BUFFER_NUM": "3",
+        "FA_WARPS_PER_BLOCK": "4",
+        "FA_MIN_CTAS_PER_SM": "2",
+	"FA_UNCACHED" : "0"
       }
     }
   ],

@@ -15,7 +15,7 @@
  *
  * Notes:
  *   - Requires CUDA Toolkit <version>.
- *   - Intended for NVIDIA GPUs with compute capability <x.y>+.
+ *   - Intended for NVIDIA GPUs with compute capability <8.0>+.
  */
 
 #include "common.cuh"
@@ -23,6 +23,7 @@
 #include "tile_def.cuh"
 #include "mma_tile.cuh"
 #include "warp_ops.cuh"
+#include "exps.cuh"
 
 #include <bit>
 #include <cmath>
@@ -41,7 +42,7 @@
 #endif
 
 #ifndef FA_BUFFER_NUM
-    #define FA_BUFFER_NUM 4
+    #define FA_BUFFER_NUM 2
 #endif
 
 #ifndef FA_WARPS_PER_BLOCK
@@ -52,8 +53,18 @@
     #define FA_MIN_CTAS_PER_SM 2
 #endif
 
+#ifndef FA_UNCACHED
+    #define FA_UNCACHED 1
+#endif
+
+#ifndef EXP_VERSION
+    #define EXP_VERSION POLY2_EXPF
+#endif
+
 // Hacky workaround
 constexpr uint32_t FA_BUFFER_UNROLL_VALUE = FA_BUFFER_UNROLL;
+constexpr uint32_t FA_UNCACHED_VALUE = FA_UNCACHED;
+constexpr uint32_t EXP_VERSION_VALUE = EXP_VERSION;
 
 template <
     uint32_t M,
@@ -63,10 +74,10 @@ template <
     uint32_t num_warp,
     uint32_t smem_size>
 __launch_bounds__(FA_WARPS_PER_BLOCK * 32, FA_MIN_CTAS_PER_SM) __global__ void flash_attention(
-    const __nv_bfloat16 *Q,
-    const __nv_bfloat16 *K,
-    const __nv_bfloat16 *V,
-    __nv_bfloat16 *output
+    const __nv_bfloat16 *__restrict__ Q,
+    const __nv_bfloat16 *__restrict__ K,
+    const __nv_bfloat16 *__restrict__ V,
+    __nv_bfloat16 *__restrict__ O
 )
 {
     asm volatile(".pragma \"enable_smem_spilling\";");
@@ -74,9 +85,10 @@ __launch_bounds__(FA_WARPS_PER_BLOCK * 32, FA_MIN_CTAS_PER_SM) __global__ void f
     Q = static_cast<const __nv_bfloat16 *>(__builtin_assume_aligned(Q, 16));
     K = static_cast<const __nv_bfloat16 *>(__builtin_assume_aligned(K, 16));
     V = static_cast<const __nv_bfloat16 *>(__builtin_assume_aligned(V, 16));
-    output = static_cast<__nv_bfloat16 *>(__builtin_assume_aligned(output, 16));
+    O = static_cast<__nv_bfloat16 *>(__builtin_assume_aligned(O, 16));
 
     Q = cuda::associate_access_property(Q, cuda::access_property::streaming{});
+    O = cuda::associate_access_property(O, cuda::access_property::streaming{});
     // K = cuda::associate_access_property(K, cuda::access_property::persisting{});
     // V = cuda::associate_access_property(V, cuda::access_property::persisting{});
 
@@ -140,7 +152,7 @@ __launch_bounds__(FA_WARPS_PER_BLOCK * 32, FA_MIN_CTAS_PER_SM) __global__ void f
     }
 
     // Fetch Q tiles corresponding to the warp.
-    q_tile = ld_Q_tile_m16_k16_regs_v3<N, qn_tile_num>(Q, warp_id, lane_id);
+    q_tile = ld_Q_tile_m16_k16_regs_v3<N, qn_tile_num, FA_UNCACHED_VALUE>(Q, warp_id, lane_id);
 
 #pragma unroll FA_BUFFER_UNROLL_VALUE
     for (KVm_tile_id = 0; KVm_tile_id < KVm_tile_num; KVm_tile_id++)
@@ -241,26 +253,30 @@ __launch_bounds__(FA_WARPS_PER_BLOCK * 32, FA_MIN_CTAS_PER_SM) __global__ void f
             );
         }
 
-        // The Qwarp Kj tile row product has completed. Result in S. //
-        // Apply the scale.
-#pragma unroll
-        for (uint32_t f = 0; f < 2; ++f)
-        {
-#pragma unroll
-            for (uint8_t i = 0; i < u32_m16_n8<1>::num_regs_th; i++)
-            {
-                s_tile.reg[f][i] = s_tile.reg[f][i] * __uint_as_float(scale);
-            }
-        }
+        // Scale computed in poly2.
 
         // Find the row maximum.
         rowmax_m16_n16(s_tile, row_max);
+
         row_max[0] = fmaxf(row_max[0], row_max_prev[0]);
         row_max[1] = fmaxf(row_max[1], row_max_prev[1]);
 
-        // Scale factor.
-        scale_factor[0] = expf(row_max_prev[0] - row_max[0]);
-        scale_factor[1] = expf(row_max_prev[1] - row_max[1]);
+        float alpha0 = 0.0f;
+        float alpha1 = 0.0f;
+
+        if (KVm_tile_id != 0)
+        {
+            const float scale_f = __uint_as_float(scale);
+
+            float d0 = row_max_prev[0] - row_max[0];
+            float d1 = row_max_prev[1] - row_max[1];
+
+            alpha0 = exp_poly2_scaled<scale>(d0);
+            alpha1 = exp_poly2_scaled<scale>(d1);
+        }
+
+        scale_factor[0] = alpha0;
+        scale_factor[1] = alpha1;
 
         // P = exp(S - m_new)
 #pragma unroll
@@ -274,7 +290,8 @@ __launch_bounds__(FA_WARPS_PER_BLOCK * 32, FA_MIN_CTAS_PER_SM) __global__ void f
                 {
                     uint32_t reg_idx = i * REGISTERS_PER_THREAD_8x8_FP32_TILE + k;
 
-                    s_tile.reg[f][reg_idx] = expf(s_tile.reg[f][reg_idx] - row_max[i]);
+                    s_tile.reg[f][reg_idx] =
+                        exp_poly2_scaled<scale>(s_tile.reg[f][reg_idx] - row_max[i]);
                 }
             }
         }
@@ -296,11 +313,13 @@ __launch_bounds__(FA_WARPS_PER_BLOCK * 32, FA_MIN_CTAS_PER_SM) __global__ void f
                     fragment * NUM_8X8_TILES_PER_16X8_TILE * REGISTERS_PER_THREAD_8x8_BF16_TILE +
                     row * REGISTERS_PER_THREAD_8x8_BF16_TILE + k;
 
-                __nv_bfloat16 s0 = __float2bfloat16(s_tile.reg[fragment][src]);
-                __nv_bfloat16 s1 = __float2bfloat16(s_tile.reg[fragment][src + 1]);
+                uint32_t packed;
 
-                p_tile.reg[0][dst] = static_cast<uint32_t>(__bfloat16_as_ushort(s0)) |
-                                     (static_cast<uint32_t>(__bfloat16_as_ushort(s1)) << 16);
+                asm volatile("cvt.rn.bf16x2.f32 %0, %1, %2;"
+                             : "=r"(packed)
+                             : "f"(s_tile.reg[fragment][src + 1]), "f"(s_tile.reg[fragment][src]));
+
+                p_tile.reg[0][dst] = packed;
             }
         }
 
@@ -322,6 +341,7 @@ __launch_bounds__(FA_WARPS_PER_BLOCK * 32, FA_MIN_CTAS_PER_SM) __global__ void f
             v_sram_ptr
         );
 
+        // Reescale O.
 #pragma unroll
         for (uint32_t i = 0; i < KVn_tile_num; ++i)
         {
@@ -332,7 +352,8 @@ __launch_bounds__(FA_WARPS_PER_BLOCK * 32, FA_MIN_CTAS_PER_SM) __global__ void f
                 for (uint32_t k = 0; k < REGISTERS_PER_THREAD_8x8_FP32_TILE; ++k)
                 {
                     uint32_t reg_idx = j * REGISTERS_PER_THREAD_8x8_FP32_TILE + k;
-                    o_tile.reg[i][reg_idx] = scale_factor[j] * o_tile.reg[i][reg_idx];
+
+                    o_tile.reg[i][reg_idx] *= scale_factor[j];
                 }
             }
         }
@@ -387,6 +408,11 @@ __launch_bounds__(FA_WARPS_PER_BLOCK * 32, FA_MIN_CTAS_PER_SM) __global__ void f
     }
 
     // O_tile division.
+    float inv_denominator[2];
+
+    inv_denominator[0] = __frcp_rn(row_denominator[0]);
+    inv_denominator[1] = __frcp_rn(row_denominator[1]);
+
 #pragma unroll
     for (uint32_t i = 0; i < KVn_tile_num; ++i)
     {
@@ -397,12 +423,13 @@ __launch_bounds__(FA_WARPS_PER_BLOCK * 32, FA_MIN_CTAS_PER_SM) __global__ void f
             for (uint32_t k = 0; k < REGISTERS_PER_THREAD_8x8_FP32_TILE; ++k)
             {
                 uint32_t reg_idx = j * REGISTERS_PER_THREAD_8x8_FP32_TILE + k;
-                o_tile.reg[i][reg_idx] /= row_denominator[j];
+
+                o_tile.reg[i][reg_idx] *= inv_denominator[j];
             }
         }
     }
 
-    st_O_tile_m16_n8_regs_coalesced<N, KVn_tile_num>(output, o_tile, warp_id, lane_id);
+    st_O_tile_m16_n128_regs_v2<N, FA_UNCACHED_VALUE>(O, o_tile, warp_id, lane_id);
 }
 
 template <uint32_t seq_len, uint32_t head_dim>

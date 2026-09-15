@@ -1,0 +1,22 @@
+prec = 200!;
+
+f = 2^x;
+I = [-1/2; 1/2];
+
+P = fpminimax(
+    f,
+    [|1, 2|],
+    [|single, single|],
+    I,
+    relative,
+    floating,
+    1
+);
+
+P;
+
+coeff(P, 1);
+coeff(P, 2);
+
+midpointmode = on!;
+supnorm(P, f, I, relative, 2^(-30));
