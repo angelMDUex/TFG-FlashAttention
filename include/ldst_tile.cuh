@@ -7,18 +7,18 @@
  */
 
 #ifndef LDST_TILE
-    #define LDST_FILE
+#define LDST_TILE
 
-    #include "common.cuh"
-    #include "tile_def.cuh"
-    #include "cp_async.cuh"
-    #include "helpers.cuh"
+#include "common.cuh"
+#include "tile_def.cuh"
+#include "cp_async.cuh"
+#include "helpers.cuh"
 
-    #include <cstdint>
-    #include <cuda_bf16.h>
-    #include <cuda_fp16.h>
-    #include <cuda_runtime.h>
-    #include <sys/types.h>
+#include <cstdint>
+#include <cuda_bf16.h>
+#include <cuda_fp16.h>
+#include <cuda_runtime.h>
+#include <sys/types.h>
 
 __device__ __forceinline__ void
 ldmatrix_x4(uint32_t &r0, uint32_t &r1, uint32_t &r2, uint32_t &r3, const void *smem_ptr)
@@ -82,13 +82,13 @@ __device__ __forceinline__ pbf16_u32_m16_n16<tiles_k> ld_Q_tile_m16_k16_regs(
 
     uint32_t warp_m = warp_id * 16; // Each warp handles 16 rows.
 
-    #pragma unroll
+#pragma unroll
     for (int k = 0; k < tiles_k; k++)
     {
-    #pragma unroll
+#pragma unroll
         for (int i = 0; i < tm8x8_in_16x16; i++)
         {
-    #pragma unroll
+#pragma unroll
             for (int j = 0; j < tn8x8_in_16x16; j++)
             {
                 uint32_t m_offsets = (warp_m + lane_m + i * 8) * qm_stride;
@@ -121,10 +121,10 @@ __device__ __forceinline__ pbf16_u32_m16_n16<tiles_k> ld_Q_tile_m16_k16_regs_v2(
 
     uint32_t warp_m = warp_id * 16;
 
-    #pragma unroll
+#pragma unroll
     for (uint32_t k = 0; k < tiles_k; ++k)
     {
-    #pragma unroll
+#pragma unroll
         for (uint32_t row_group = 0; row_group < 4; ++row_group)
         {
             // row_group:
@@ -180,9 +180,9 @@ __device__ __forceinline__ pbf16_u32_m16_n16<tiles_k> ld_Q_tile_m16_k16_regs_v3(
 
     uint32_t reg[32];
 
-    // Cada lane carga 8 filas.
-    // Cada uint4 = 4 uint32 = 8 bf16.
-    #pragma unroll
+// Cada lane carga 8 filas.
+// Cada uint4 = 4 uint32 = 8 bf16.
+#pragma unroll
     for (uint32_t i = 0; i < 8; ++i)
     {
         const __nv_bfloat16 *Q_m_offset = Q + (warp_id * 16 + i + 8 * warp_half) * qm_stride;
@@ -269,7 +269,7 @@ __device__ __forceinline__ pbf16_u32_m16_n16<tiles_k> ld_Q_tile_m16_k16_regs_v3(
     __butterfly_stage<8>(reg, lane_id);
     __butterfly_stage<16>(reg, lane_id);
 
-    #pragma unroll
+#pragma unroll
     for (uint32_t k = 0; k < 8; ++k)
     {
         q_tile.reg[k][0] = reg[2 * k];
@@ -306,7 +306,7 @@ __device__ __forceinline__ void ld_Q_tile_m16_sram_swizzled(
     const uint32_t warp_half = lane_id / 16;
     const uint32_t lane_chunk = lane_id % 16;
 
-    #pragma unroll
+#pragma unroll
     for (uint32_t Qm_row = 2 * warp_id + warp_half; Qm_row < Q_TILE_ROWS; Qm_row += 2 * num_warp)
     {
         const uint32_t logical_chunk = lane_chunk;
@@ -364,7 +364,7 @@ __device__ __forceinline__ void ld_K_V_tile_m16_n8_x2_sram(
     uint32_t lane_group = lane_id / 16;
     uint32_t lane_row = lane_id % 16;
 
-    #pragma unroll
+#pragma unroll
     for (int i = warp_id; i < num_tiles / 2; i += num_warp)
     {
         const __nv_bfloat16 *k_ptr =
@@ -419,7 +419,7 @@ __device__ __forceinline__ void ld_K_V_tile_m16_n8_x2_sram_swizzled(
     char *KV_buffer_ptr =
         KV_id == 0 ? static_cast<char *>(k_buffer_ptr) : static_cast<char *>(v_buffer_ptr);
 
-    #pragma unroll
+#pragma unroll
     for (uint32_t KVm_row = warp_id; KVm_row < KVm_TILE_ROWS; KVm_row += num_warp)
     {
         uint32_t logical_chunk = lane_chunk;
@@ -462,7 +462,7 @@ __device__ __forceinline__ void st_O_tile_m16_n8_regs_coalesced(
     uint32_t dst_tile = lane_id / 4; // 0..7
     uint32_t lane_n = lane_id % 4;   // pair inside an m16n8 tile
 
-    #pragma unroll
+#pragma unroll
     for (uint32_t row = 0; row < 16; ++row)
     {
         uint32_t row_half = row / 8;
@@ -474,7 +474,7 @@ __device__ __forceinline__ void st_O_tile_m16_n8_regs_coalesced(
         // in the original MMA fragment layout.
         uint32_t src_lane = row_8x8 * 4 + lane_n;
 
-    #pragma unroll
+#pragma unroll
         for (uint32_t tile_base = 0; tile_base < KVn_tile_num; tile_base += 8)
         {
             uint32_t packed = 0;
@@ -483,7 +483,7 @@ __device__ __forceinline__ void st_O_tile_m16_n8_regs_coalesced(
             // registers distributed over tiles
             //             ->
             // 32 lanes containing 64 consecutive BF16.
-    #pragma unroll
+#pragma unroll
             for (uint32_t t = 0; t < 8; ++t)
             {
                 union
@@ -539,7 +539,7 @@ __device__ __forceinline__ void prefetch_KV_tile_m16_sram_swizzled(
     uint32_t half = lane_id >> 4;
     uint32_t lane_chunk = lane_id & 15;
 
-    #pragma unroll
+#pragma unroll
     for (uint32_t row = 2 * block_warp_id + half; row < TILE_ROWS; row += 2 * num_warp)
     {
         uint32_t logical_chunk = lane_chunk;
@@ -579,7 +579,7 @@ __device__ __forceinline__ void st_O_tile_m16_n128_regs_v2(
     //
     // --------------------------------------------------------
 
-    #pragma unroll
+#pragma unroll
     for (uint32_t k = 0; k < 8; ++k)
     {
         union
@@ -645,7 +645,7 @@ __device__ __forceinline__ void st_O_tile_m16_n128_regs_v2(
 
     const uint32_t lane_half_id = lane_id % 16;
 
-    #pragma unroll
+#pragma unroll
     for (uint32_t i = 0; i < 8; ++i)
     {
         const uint4 v = make_uint4(reg[i * 4 + 0], reg[i * 4 + 1], reg[i * 4 + 2], reg[i * 4 + 3]);

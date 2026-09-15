@@ -99,7 +99,7 @@ template <uint32_t scale_bits> float __device__ __forceinline__ exp_poly2_scaled
     float f = fmaf(x, K, -n);
 
     // Approximate 2^f
-    float p = fmaf(0.23992471f, f, 0.70272607f);
+    float p = fmaf(0.23986406624317169189453125f, f, 0.702941834926605224609375f);
     p = fmaf(p, f, 1.0f);
 
     return __uint_as_float(__float_as_uint(p) + (nbits << 23));
