@@ -126,7 +126,7 @@ def benchmark_with_ncu(build_dir, seq_len):
             "all",
 
             "--clock-control",
-            "force-boost",
+            "base",
 
             "--metrics",
             "gpu__time_duration.sum",

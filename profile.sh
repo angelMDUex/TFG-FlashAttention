@@ -31,7 +31,7 @@ echo
 COMMON=(
     --set full
     --apply-rules no
-    --clock-control force-boost
+    --clock-control base
     -f
 )
 
