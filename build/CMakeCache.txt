@@ -36,10 +36,8 @@ CMAKE_COLOR_MAKEFILE:BOOL=ON
 //Default GPU architectures for CUDA compilation
 CMAKE_CUDA_ARCHITECTURES:UNINITIALIZED=86
 
-//Full path to the compiler used for language <LANG>. Set by CMake
-// during compiler detection on the first configure; users may
-// override on the command line to select a specific toolchain.
-CMAKE_CUDA_COMPILER:UNINITIALIZED=/usr/local/cuda-13/bin/nvcc
+//CUDA compiler
+CMAKE_CUDA_COMPILER:STRING=/usr/local/cuda-13/bin/nvcc
 
 //Flags used by the CUDA compiler during all build types.
 CMAKE_CUDA_FLAGS:STRING=
@@ -1112,8 +1110,6 @@ _Python3_INCLUDE_DIR:INTERNAL=/root/.local/share/uv/python/cpython-3.12-linux-x8
 //Python3 Properties
 _Python3_INTERPRETER_PROPERTIES:INTERNAL=Python;3;12;14;64;<none>;cpython-312-x86_64-linux-gnu;abi3;/root/.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12;/root/TFG-FlashAttention/.venv/lib/python3.12;/root/TFG-FlashAttention/.venv/lib/python3.12/site-packages;/root/TFG-FlashAttention/.venv/lib/python3.12/site-packages
 _Python3_INTERPRETER_SIGNATURE:INTERNAL=999c0081caa848595fd1b39898921787
-//Interpreter reason failure
-_Python3_Interpreter_REASON_FAILURE:INTERNAL=
 //Path to a library.
 _Python3_LIBRARY_RELEASE:INTERNAL=/root/.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/lib/libpython3.12.so
 //NumPy reason failure
