@@ -1,0 +1,1 @@
+/usr/bin/g++ "CMakeFiles/TFG-FA-Launcher.dir/src/cuda/standalone_launcher.cu.o" -o TFG-FA-Launcher  -lcudadevrt -lcudart_static -lrt -lpthread -ldl  -L"/usr/local/cuda-13/targets/x86_64-linux/lib/stubs" -L"/usr/local/cuda-13/targets/x86_64-linux/lib"
