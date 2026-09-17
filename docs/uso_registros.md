@@ -1,4 +1,160 @@
-# Algoritmo general.
+# Algoritmo general FlashAttention-2.
+Sean las matrices
+
+$$
+Q,K,V \in \mathbb{R}^{N\times d},
+$$
+
+y sean \(B_r\) y \(B_c\) los tamaños de bloque empleados para \(Q\) y para \(K,V\), respectivamente.
+
+La matriz \(Q\) se divide en
+
+$$
+T_r=\frac{N}{B_r}
+$$
+
+bloques
+
+$$
+Q_1,\ldots,Q_{T_r},
+\qquad
+Q_i\in\mathbb{R}^{B_r\times d}.
+$$
+
+De forma análoga, \(K\) y \(V\) se dividen en
+
+$$
+T_c=\frac{N}{B_c}
+$$
+
+bloques
+
+$$
+K_1,\ldots,K_{T_c},
+\qquad
+V_1,\ldots,V_{T_c},
+$$
+
+con
+
+$$
+K_j,V_j\in\mathbb{R}^{B_c\times d}.
+$$
+
+Para cada bloque \(Q_i\):
+
+1. Cargar \(Q_i\) desde HBM a memoria on-chip.
+
+2. Inicializar:
+
+$$
+O_i^{(0)}=0,
+$$
+
+$$
+l_i^{(0)}=0,
+$$
+
+$$
+m_i^{(0)}=-\infty.
+$$
+
+Aquí, \(O_i\) representa el acumulador de la salida, \(m_i\) almacena el máximo actual de cada fila y \(l_i\) almacena el denominador acumulado del softmax.
+
+3. Para cada bloque \(K_j,V_j\):
+
+   a. Cargar \(K_j\) y \(V_j\) desde HBM a memoria on-chip.
+
+   b. Calcular la matriz de scores:
+
+$$
+S_i^{(j)}
+=
+Q_iK_j^T,
+\qquad
+S_i^{(j)}\in\mathbb{R}^{B_r\times B_c}.
+$$
+
+c. Actualizar el máximo de cada fila:
+
+$$
+m_i^{(j)}
+=
+\max
+\left(
+m_i^{(j-1)},
+\operatorname{rowmax}(S_i^{(j)})
+\right).
+$$
+
+d. Calcular el factor necesario para reescalar los resultados obtenidos en iteraciones anteriores:
+
+$$
+\alpha_i^{(j)}
+=
+\exp
+\left(
+m_i^{(j-1)}-m_i^{(j)}
+\right).
+$$
+
+e. Calcular las exponenciales correspondientes al bloque actual:
+
+$$
+P_i^{(j)}
+=
+\exp
+\left(
+S_i^{(j)}-m_i^{(j)}
+\right).
+$$
+
+La resta de \(m_i^{(j)}\) se realiza de forma independiente para cada fila de \(S_i^{(j)}\).
+
+f. Actualizar el denominador acumulado del softmax:
+
+$$
+l_i^{(j)}
+=
+\alpha_i^{(j)}\,l_i^{(j-1)}
++
+\operatorname{rowsum}
+\left(
+P_i^{(j)}
+\right).
+$$
+
+g. Actualizar el acumulador de salida:
+
+$$
+O_i^{(j)}
+=
+\alpha_i^{(j)}\,O_i^{(j-1)}
++
+P_i^{(j)}V_j.
+$$
+
+4. Una vez procesados todos los bloques \(K_j,V_j\), normalizar cada fila del acumulador mediante su denominador correspondiente:
+
+$$
+O_i[r,:]
+=
+\frac{
+O_i^{(T_c)}[r,:]
+}{
+l_i^{(T_c)}[r]
+},
+\qquad
+0\le r < B_r.
+$$
+
+5. Escribir \(O_i\) en HBM como el bloque correspondiente de la matriz de salida \(O\).
+
+El procedimiento se repite para todos los bloques \(Q_i\), obteniendo finalmente
+
+$$
+O=\operatorname{softmax}(QK^T)V.
+$$
 
 # Calculo de ocupancia y mapeo de warps.
 La ocupancia es el numero de threads que se pueden asignar a un SM sobre el total. En un SM caben 16 ctas, cada uno con 1024 threads maximo, haciendo un total de 1536 threads (48 warps). La ocupancia tambien se ve afectada por la sram alojada por cada cta. 
@@ -68,6 +224,7 @@ La matriz P se espera que utilice registros de S. La matriz S consume registros 
 Q_i                 32
 O_i                 64
 S_ij                  8
+K/V_i,i+i              8
 m_i / m_prev          2
 l_i / l_prev          2
 scale_factor           2
@@ -79,7 +236,7 @@ La cifra de 120 registros se interpreta de la siguiente manera:
 El compilador puede decidir optimizar operaciones y almacenar el resultado en registros, aumentando la cuenta de registros empleados. Este tipo de operaciones pueden ser de indexacion, por ejemplo. El compilador tambien puede decidir sacrificar registros para conseguir una mayor ocupancia. Si se utilizan menos de 120 registros, datos que son reutilizados multiples veces, como O_i, Q_i, deben ser almacenados en memoria local y recargados cuando se usen. Es pronto para afirmar que una cuenta de registros menor a 120 aumente o disminuya el rendimiento. Menor cantidad de registros implican mas operaciones de memoria, pero mayor ocupacion -La SM puede intercalar las operaciones extra de memoria con mas operaciones fruto de tener mas warps en la maquina-. Mas registros pueden reducir el numero de warps que residen en un SM, y con ello reducir la variedad de operaciones, pero disminuyen el numero de accesos a memoria principal.
 
 # Decisiones de paralelismo y warp coarsening.
-Se paraleliza a traves de la longitud de secuencia. Paralelizar a traves de la dimension de cabeza requiere trabajo desigual por parte de los threads durante el calculo de la matriz P, ademas de forzar sincronizacion de la matriz P y de las sumas de Q_j * K_j. Decido que el numero de rows que procesa un warp sea 16, porque es la dimension que tiene la matriz A(m16k16) de mma.sync. Procesar un multiplo de esas 16 filas multiplica el numero de registros por warp y reduce el nivel de paralelismo. Reducir el nivel de paralelismo implica que si el hardware mejora, aumenta el ancho de banda de la dram, y aumentan el numero de SMs, se puede aprovechar mas. 
+Se paraleliza a traves de la longitud de secuencia. Paralelizar a traves de la dimension de cabeza requiere trabajo desigual por parte de los threads durante el calculo de la matriz P, ademas de forzar sincronizacion de la matriz P y de las sumas de Q_j * K_j. Decido que el numero de rows que procesa un warp sea 16, porque es la dimension que tiene la matriz A(m16k16) de mma.sync. Procesar un multiplo de esas 16 filas multiplica el numero de registros por warp y reduce el nivel de paralelismo. Aumentar el nivel de paralelismo implica que si el hardware mejora, aumenta el ancho de banda de la dram, y aumentan el numero de SMs, se puede aprovechar mas. 
 
 # Cargado Q_i: 
 Cargar Q_i presenta numerosas opciones. Q_i multiplica cada K_i y V_i. Es logico que el factor que mas hay que cargar de memria se almacene en la memoria de mayor velocidad, es decir, los registros. Hay multiples maneras de cargar Q_i, cada una con sus ventajas e inconvenientes.
@@ -224,8 +381,46 @@ La formula es: n + 127 << 23
 
 5.1 Constante MAGIC
 
+
 Sollya no necesita una semilla. 
 
+## Analisis SASS __expf vs aproximacion por polinomio.
+[Godbolt analisis](https://godbolt.org/#g:!((g:!((h:codeEditor,i:(filename:'1',fontScale:14,fontUsePx:'0',j:1,lang:cuda,selection:(endColumn:2,endLineNumber:56,positionColumn:2,positionLineNumber:56,selectionStartColumn:2,selectionStartLineNumber:56,startColumn:2,startLineNumber:56),source:'%23include+%3Ccuda_runtime.h%3E%0A%23include+%3Ccstdint%3E%0A%23include+%3Ccmath%3E%0A%0A%0Aconstexpr+uint32_t+SCALE_BITS+%3D+0x3db504f3u%3B++//+1/sqrt(128)%0A%0A%0Atemplate+%3Cuint32_t+scale_bits%3E%0A__device__+__forceinline__%0Afloat+exp_poly2_scaled(float+x)%0A%7B%0A++++constexpr+float+LOG2E+%3D+0x1.715476p%2B0f%3B%0A++++constexpr+float+MAGIC+%3D+0x1.8p23f%3B%0A%0A++++const+float+scale+%3D+__uint_as_float(scale_bits)%3B%0A++++const+float+K+%3D+scale+*+LOG2E%3B%0A%0A++++x+%3D+fmaxf(x,+-80.0f+/+scale)%3B%0A%0A++++float+t+%3D+fmaf(x,+K,+MAGIC)%3B%0A%0A++++uint32_t+nbits+%3D+__float_as_uint(t)%3B%0A%0A++++float+n+%3D+t+-+MAGIC%3B%0A%0A++++float+f+%3D+fmaf(x,+K,+-n)%3B%0A%0A++++float+p+%3D+fmaf(%0A++++++++0.23986406624317169189453125f,%0A++++++++f,%0A++++++++0.702941834926605224609375f%0A++++)%3B%0A%0A++++p+%3D+fmaf(p,+f,+1.0f)%3B%0A%0A++++return+__uint_as_float(%0A++++++++__float_as_uint(p)+%2B+(nbits+%3C%3C+23)%0A++++)%3B%0A%7D%0A%0A%0Aextern+%22C%22+__global__%0Avoid+test_expf(float*+out,+float+x)%0A%7B%0A++++constexpr+float+scale+%3D+0.0883883461356163f%3B%0A%0A++++out%5B0%5D+%3D+__expf(x+*+scale)%3B%0A%7D%0A%0A%0Aextern+%22C%22+__global__%0Avoid+test_poly2(float*+out,+float+x)%0A%7B%0A++++out%5B0%5D+%3D+exp_poly2_scaled%3CSCALE_BITS%3E(x)%3B%0A%7D'),l:'5',n:'0',o:'CUDA+C%2B%2B+source+%231',t:'0'),(h:compiler,i:(compiler:nvcc130,filters:(b:'0',binary:'1',binaryObject:'1',commentOnly:'0',debugCalls:'1',demangle:'0',directives:'0',execute:'1',intel:'0',libraryCode:'0',trim:'1',verboseDemangling:'0'),flagsViewOpen:'1',fontScale:14,fontUsePx:'0',j:1,lang:cuda,libs:!(),options:'-arch%3Dsm_86+-O3',overrides:!(),selection:(endColumn:1,endLineNumber:1,positionColumn:1,positionLineNumber:1,selectionStartColumn:1,selectionStartLineNumber:1,startColumn:1,startLineNumber:1),source:1),l:'5',n:'0',o:'+NVCC+13.0.0+(Editor+%231)',t:'0'),(h:device,i:(compilerName:'NVCC+13.0.0',device:'SASS+(sm_86)',editorid:1,fontScale:14,fontUsePx:'0',j:1,selection:(endColumn:7,endLineNumber:17,positionColumn:7,positionLineNumber:17,selectionStartColumn:7,selectionStartLineNumber:17,startColumn:7,startLineNumber:17),treeid:0),l:'5',n:'0',o:'Device+Viewer+NVCC+13.0.0+(Editor+%231,+Compiler+%231)',t:'0')),k:100,l:'4',n:'0',o:'',s:0,t:'0')),version:4)
+
+La descripcion de las instrucciones es:
+| Instruccion                              | Significado                                 | Throughput |
+|------------------------------------------|---------------------------------------------|------------|
+| MOV R3, 0x3e0293ee                       | mover a R3 el resultado de scale * log2(e)  | -          |
+| FMNMX R0, R0, -905.0966796875, !PT       | clamp el resultado (fmaxf -80.0f / scale)   | 64         |
+| MOV R2, 0x3e759eed                       | Cargar el coeficiente 0.2398...             | -          |
+| FFMA R4, R0, R3, 12582912                | Fma con K y MAGIC                           | 128        |
+| FADD R3, R4, -12582912                   | n = t - MAGIC                               | 128        |
+| FFMA R3, R0, 0.12751743197441101074, -R3 | f = fmaf(x, K, -n);                         | 128        |
+| FFMA R0, R3, R2, 0.70294183492660522461  | fmaf (0.23... , f, 0.70...)                 | 128        |
+| FFMA R5, R3, R0, 1                       | Ultimo fma con p y f (+1 del coeficiente 1) | 128        |
+| LEA R5, R4, R5, 0x17                     | p + nbits << 23                             | -          |
+
+Son 4 fma, 1 max, 1 fadd, 2 operaciones de carga con inmediatos y una lea. 
+
+Tpoly​≃4/128​+1/128​+1/64​=7/128​=0.0547
+
+__expf
+Calcula ez=2zlog2​(e).
+
+| Instruccion                         | Significado                                   | Throughput |
+|-------------------------------------|-----------------------------------------------|------------|
+| FMUL R0, R0, 0.08838834613561630249 | El escalado de x por 1/sqrt(128)              | 128        |
+| FMUL R0, R0, 1.4426950216293334961  | Multiplicar R0 por log2(e)                    | 128        |
+| FSETP.GEU.AND P0, PT, R0, -126, PT  | Registro de predicado para clamp si x <= -126 | -          |
+| @!P0 FMUL R0, R0, 0.5               | Si x <= -126, se divide entre 2               | 128        |
+| MUFU.EX2 R5, R0                     | Calculo de 2^y                                | 16         |
+| @!P0 FMUL R5, R5, R5                | Si x <= -126, se eleva al cuadrado R5         | 128        |
+
+TEX2​=1/16​=0.0625
+
+Sin contar las mov y las lea (que dificilmente pueden tener menos throughput que las fmul), nuestro kernel tiene mas throughput por operacion. Si contamos las fmul y las instrucciones predicadas, tiene mucho peor throughput. __expf tiene dos fmul que pueden fusionarse, pero que el compilador ha decidido no hacer. No hay que confundir la latencia con el throughput. Throughput es el numero de resultados que podemos obtener por ciclo por sm por pipeline determinado. Latencia es el tiempo que tarda una operacion. Nvidia nos facilita el throughput de las instrucciones, pero no cuanto tarda una de ellas, ni que ocurre cuando hay dependencias. Solo podemos afirmar que tenemos mas throughput que la expf base. 
+
+Son 2 fmul, 2 fmul opcionales, 1 fstep y una mfu
 
 # Calcular S y downscale a P
 
@@ -236,10 +431,46 @@ Sollya no necesita una semilla.
 # Volcado de O en memoria principal.
 
 # Optimizacion de hiperparametros mediante Optuna.
+Para balancear el numero de warps, el numero de ctas que ocupan un sm, cuantos bufferes tenemos en nuestra estrategia multibuffer, cuanto podemos desenrollar el bucle principal sin caer en excesivos fallos de cache de instrucciones, si debemos utilizar accesos cg o wb a las matrices Q y O necesitamos hacer una busqueda de parametros:
 
-# Analisis de los hiperparametros analizados.
+| Parámetro                  | Nº de valores | Valores posibles                                        |
+| -------------------------- | ------------: | ------------------------------------------------------- |
+| `ctas_per_sm`              |             8 | `1, 2, 3, 4, 5, 6, 7, 8`                                |
+| `num_warp`                 |             5 | `1, 2, 4, 8, 16`                                        |
+| `buffer_num`               |             5 | `2, 3, 4, 5, 6`                                         |
+| `uncached`                 |             2 | `0, 1`                                                  |
+| `buffer_unroll`            |            16 | `1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16` |
+| **Total de combinaciones** |      **6400** | \(8 \times 5 \times 5 \times 2 \times 16\)              
+
+A priori, los parametros mencionados podian parecer pocos. Sin embargo, probar 6400 combinaciones es un proceso costoso. Podemos considerar unicamente combinaciones que sean posibles, contando solo el maximo numero de warps por sm, asi como el maximo numero de ctas teniendo en cuenta la sram que ocupa un kernel dado `buffer_num`. 
+
+| Filtro                   | Condición de poda                            | Cómo se calcula                                                                                                                                                                                                                                                                                           | Trials eliminados | Trials restantes |
+|--------------------------|----------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------:|-----------------:|
+| **Threads por bloque**   | `32 * warps_per_block > 1024`                | El máximo posible es `32 * 16 = 512`, así que ninguna combinación viola el límite                                                                                                                                                                                                                         |             **0** |         **6400** |
+| **Threads por SM**       | `32 * warps_per_block * ctas_per_sm > 1536`  | Equivale a `warps_per_block * ctas_per_sm > 48`. Hay **7 pares inválidos** `(ctas_per_sm, warps_per_block)`. Cada par fijo todavía puede combinarse con `5` valores de `buffer_num`, `2` de `uncached` y `16` de `buffer_unroll`, es decir `5 * 2 * 16 = 160` trials por par. Por tanto: `7 * 160 = 1120` |          **1120** |         **5280** |
+| **Shared memory por SM** | `8 KiB * buffer_num * ctas_per_sm > 100 KiB` | Tras aplicar el filtro anterior, hay **84 combinaciones inválidas** `(ctas_per_sm, warps_per_block, buffer_num)`. Cada una todavía puede combinarse con `2` valores de `uncached` y `16` de `buffer_unroll`, es decir `2 * 16 = 32` trials. Por tanto: `84 * 32 = 2688`                                   |          **2688** |         **2592** |
+| **Total**                | —                                            | `1120 + 2688`                                                                                                                                                                                                                                                                                             |          **3808** |         **2592** |
+
+Si tenemos 2592 trials, y suponemos un rango generoso de tiempo de compilado + profiling -30s-, evaluar todas las opciones nos tardaria 2592 trials * 30s/trial = 77760 segundos; 77760 segundos * 1h / 3600s = 21,6h.
+
+21,6h para un rango de parametros tan bajo es un coste inasumible a la par que innecesario. Por ello, debemos hacer una busqueda informada. En el proyecto he decidido realizarla mediante optuna y el sampler TPEMultiSampler, semilla 0, 200 estudios y 100 estudios de busqueda. 
+
+
+Esta idea se puede extrapolar para ajustar si es necesario warp coarsening e incluso que distribucion de datos le corresponde a cada grafica en una configuracion multigpu. 
+
+# Analisis de los resultados de optuna.
+
+## Longitud de secuencia 8192
+## Longitud de secuencia 16k
+## Longitud de secuencia 32k
+## Longitud de secuencia 64k
 
 # Analisis de los resultados de NCU.
+
+## Longitud de secuencia 8192
+## Longitud de secuencia 16k
+## Longitud de secuencia 32k
+## Longitud de secuencia 64k
 
 # Conclusion.
 
@@ -252,3 +483,7 @@ Que cambia en SM_100
 
 # Apendice C
 Branch para recalcular O.
+
+# Apendice D
+Aspectos empleados IEE754
+

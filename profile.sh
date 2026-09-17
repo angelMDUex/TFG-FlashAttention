@@ -5,7 +5,9 @@ CUDA_HOME="/usr/local/cuda-13"
 NCU="$CUDA_HOME/bin/ncu"
 NCU_UI="$CUDA_HOME/bin/ncu-ui"
 PYTHON=".venv/bin/python"
+
 PROFILE_DIR="profile"
+BUILD_DIR="build"
 
 mkdir -p "$PROFILE_DIR"
 
@@ -13,6 +15,7 @@ read -rp "Sequence length [8192/16384/32768/65536]: " SEQ_LEN
 
 case "$SEQ_LEN" in
     8192|16384|32768|65536)
+        PRESET="angel-wsl-${SEQ_LEN}"
         ;;
     *)
         echo "Invalid sequence length: $SEQ_LEN"
@@ -24,8 +27,9 @@ GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader | head -n 1)
 GPU_TAG=$(echo "$GPU_NAME" | tr ' ' '_' | tr -cd '[:alnum:]_-')
 
 echo
-echo "Profiling on: $GPU_NAME"
-echo "Sequence length: $SEQ_LEN"
+echo "Profiling on:     $GPU_NAME"
+echo "Sequence length:  $SEQ_LEN"
+echo "CMake preset:     $PRESET"
 echo
 
 COMMON=(
@@ -40,11 +44,22 @@ COMMON=(
 # ============================================================
 
 echo "============================================================"
-echo "Building CUDA for sequence length: $SEQ_LEN"
+echo "Building CUDA"
+echo "Sequence length: $SEQ_LEN"
+echo "Preset:          $PRESET"
 echo "============================================================"
 
-FA_SEQ_LEN="$SEQ_LEN" uv run cmake --preset angel-wsl
-FA_SEQ_LEN="$SEQ_LEN" uv run cmake --build build/
+# Los parámetros FA_* del preset afectan al código generado.
+# Limpiamos el build para evitar reutilizar una configuración
+# compilada con parámetros correspondientes a otra longitud.
+if [[ -d "$BUILD_DIR" ]]; then
+    echo "Removing previous build directory..."
+    rm -rf "$BUILD_DIR"
+fi
+
+FA_SEQ_LEN="$SEQ_LEN" uv run cmake --preset "$PRESET"
+
+FA_SEQ_LEN="$SEQ_LEN" uv run cmake --build --preset "$PRESET"
 
 # ============================================================
 # CUDA

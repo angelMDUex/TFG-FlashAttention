@@ -9,19 +9,67 @@
         "CUDAToolkit_ROOT": "/usr/local/cuda-13.0",
         "Python3_EXECUTABLE": "${sourceDir}/.venv/bin/python",
         "TORCH_CUDA_ARCH_LIST": "8.6",
-	"CMAKE_CUDA_ARCHITECTURES": "86",
-	"CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
-      }      
+        "CMAKE_CUDA_ARCHITECTURES": "86",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
     },
     {
       "name": "angel-wsl-autotune",
       "inherits": "angel-wsl",
       "environment": {
-	"FA_BUFFER_UNROLL": "$penv{FA_BUFFER_UNROLL}",
-	"FA_BUFFER_NUM": "$penv{FA_BUFFER_NUM}",
-	"FA_WARPS_PER_BLOCK": "$penv{FA_WARPS_PER_BLOCK}",
-	"FA_MIN_CTAS_PER_SM": "$penv{FA_MIN_CTAS_PER_SM}",
-	"FA_UNCACHED" : "$penv{FA_UNCACHED}"
+        "FA_BUFFER_UNROLL": "$penv{FA_BUFFER_UNROLL}",
+        "FA_BUFFER_NUM": "$penv{FA_BUFFER_NUM}",
+        "FA_WARPS_PER_BLOCK": "$penv{FA_WARPS_PER_BLOCK}",
+        "FA_MIN_CTAS_PER_SM": "$penv{FA_MIN_CTAS_PER_SM}",
+        "FA_UNCACHED": "$penv{FA_UNCACHED}"
+      }
+    },
+    {
+      "name": "angel-wsl-8192",
+      "inherits": "angel-wsl",
+      "displayName": "FlashAttention N=8192",
+      "environment": {
+        "FA_BUFFER_UNROLL": "11",
+        "FA_BUFFER_NUM": "3",
+        "FA_WARPS_PER_BLOCK": "2",
+        "FA_MIN_CTAS_PER_SM": "3",
+        "FA_UNCACHED": "0"
+      }
+    },
+    {
+      "name": "angel-wsl-16384",
+      "inherits": "angel-wsl",
+      "displayName": "FlashAttention N=16384",
+      "environment": {
+        "FA_BUFFER_UNROLL": "7",
+        "FA_BUFFER_NUM": "3",
+        "FA_WARPS_PER_BLOCK": "4",
+        "FA_MIN_CTAS_PER_SM": "2",
+        "FA_UNCACHED": "1"
+      }
+    },
+    {
+      "name": "angel-wsl-32768",
+      "inherits": "angel-wsl",
+      "displayName": "FlashAttention N=32768",
+      "environment": {
+        "FA_BUFFER_UNROLL": "7",
+        "FA_BUFFER_NUM": "4",
+        "FA_WARPS_PER_BLOCK": "4",
+        "FA_MIN_CTAS_PER_SM": "2",
+        "FA_UNCACHED": "0"
+      }
+    },
+    {
+      "name": "angel-wsl-65536",
+      "inherits": "angel-wsl",
+      "displayName": "FlashAttention N=65536",
+      "environment": {
+        "FA_BUFFER_UNROLL": "6",
+        "FA_BUFFER_NUM": "4",
+        "FA_WARPS_PER_BLOCK": "4",
+        "FA_MIN_CTAS_PER_SM": "2",
+        "FA_UNCACHED": "1"
       }
     }
   ],
@@ -29,6 +77,22 @@
     {
       "name": "angel-wsl",
       "configurePreset": "angel-wsl"
+    },
+    {
+      "name": "angel-wsl-8192",
+      "configurePreset": "angel-wsl-8192"
+    },
+    {
+      "name": "angel-wsl-16384",
+      "configurePreset": "angel-wsl-16384"
+    },
+    {
+      "name": "angel-wsl-32768",
+      "configurePreset": "angel-wsl-32768"
+    },
+    {
+      "name": "angel-wsl-65536",
+      "configurePreset": "angel-wsl-65536"
     }
   ]
 }
