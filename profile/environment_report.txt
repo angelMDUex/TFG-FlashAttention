@@ -3,36 +3,36 @@
 ============================================================
 
 ===== DATE =====
-2026-08-31T18:39:33+00:00
+2026-09-17T21:01:45+00:00
 
 ===== OPERATING SYSTEM =====
 PRETTY_NAME="Ubuntu 22.04.5 LTS"
 VERSION="22.04.5 LTS (Jammy Jellyfish)"
-Kernel: 6.8.0-138-generic
+Kernel: 6.8.0-59-generic
 Architecture: x86_64
 
 ===== CPU =====
-Architecture:                            x86_64
-CPU(s):                                  7
-Model name:                              AMD EPYC 7343 16-Core Processor
-Thread(s) per core:                      1
-Core(s) per socket:                      1
-Socket(s):                               7
-BogoMIPS:                                6387.99
-NUMA node0 CPU(s):                       0-6
+Architecture:                         x86_64
+CPU(s):                               30
+Model name:                           AMD Ryzen Threadripper PRO 3995WX 64-Cores
+Thread(s) per core:                   1
+Core(s) per socket:                   1
+Socket(s):                            30
+BogoMIPS:                             5389.87
+NUMA node0 CPU(s):                    0-29
 
-CPU model: AMD EPYC 7343 16-Core Processor
-Current CPU frequency: avg 3194.00 MHz, min 3194.00 MHz, max 3194.00 MHz
+CPU model: AMD Ryzen Threadripper PRO 3995WX 64-Cores
+Current CPU frequency: avg 2694.94 MHz, min 2694.94 MHz, max 2694.94 MHz
 
 CPU boost/turbo state: not exposed by kernel
 
 ===== SYSTEM MEMORY =====
                total        used        free      shared  buff/cache   available
-Mem:            49Gi       1.5Gi        46Gi       9.0Mi       1.8Gi        47Gi
+Mem:            24Gi       977Mi       8.0Gi       1.0Mi        15Gi        23Gi
 
 ===== GPU =====
 name, driver_version, compute_cap, memory.total [MiB], pstate, temperature.gpu, power.draw [W], power.limit [W], utilization.gpu [%], utilization.memory [%], clocks.current.sm [MHz], clocks.current.memory [MHz], clocks.max.sm [MHz], clocks.max.memory [MHz]
-NVIDIA A100-SXM4-40GB, 580.173.02, 8.0, 40960 MiB, P0, 60, 229.74 W, 400.00 W, 100 %, 2 %, 1125 MHz, 1215 MHz, 1410 MHz, 1215 MHz
+NVIDIA GeForce RTX 3090, 580.95.05, 8.6, 24576 MiB, P0, 51, 78.24 W, 370.00 W, 4 %, 0 %, 1755 MHz, 9751 MHz, 2115 MHz, 9751 MHz
 
 ===== GPU COMPUTE CONFIGURATION =====
 compute_mode, persistence_mode
@@ -47,20 +47,20 @@ Cuda compilation tools, release 13.0, V13.0.88
 Build cuda_13.0.r13.0/compiler.36424714_0
 
 ===== COMPILERS =====
-gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0
-g++ (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0
+gcc (Ubuntu 11.4.0-1ubuntu1~22.04) 11.4.0
+g++ (Ubuntu 11.4.0-1ubuntu1~22.04) 11.4.0
 cmake version 4.4.3
 
 ===== PYTHON / PYTORCH / TRITON =====
 uv: uv 0.12.6 (7938ca5d5 2026-08-25 x86_64-unknown-linux-gnu)
-Python 3.14.7
+Python 3.12.14
 PyTorch: 2.13.0+cu130
 PyTorch CUDA: 13.0
 CUDA available: True
-GPU: NVIDIA A100-SXM4-40GB
-Compute capability: (8, 0)
-SM count: 108
-GPU memory: 39.49 GiB
+GPU: NVIDIA GeForce RTX 3090
+Compute capability: (8, 6)
+SM count: 82
+GPU memory: 23.56 GiB
 cuDNN: 92000
 Triton: 3.7.1
 
