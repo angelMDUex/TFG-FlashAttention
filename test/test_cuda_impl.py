@@ -64,10 +64,10 @@ def test_cuda_uniform_attention():
     )
 
 @pytest.mark.validez
-def test_cuda_flash_attention_against_sdpa():
+def test_cuda_flash_attention_against_sdpa(seq_len):
     torch.manual_seed(0)
 
-    q = torch.randn((N, D), device="cuda", dtype=torch.bfloat16)
+    q = torch.randn((seq_len, D), device="cuda", dtype=torch.bfloat16)
     k = torch.randn_like(q)
     v = torch.randn_like(q)
 

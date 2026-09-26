@@ -20,3 +20,19 @@ target_link_libraries(
 include(GoogleTest)
 
 gtest_discover_tests(cuda_tests)
+
+
+# Exponential test
+add_executable(test_exp
+    test_exp.cu
+)
+
+target_include_directories(
+    test_exp
+    PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+)
+
+target_compile_options(test_exp PRIVATE
+    $<$<COMPILE_LANGUAGE:CUDA>:-O3>
+)

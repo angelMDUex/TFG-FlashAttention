@@ -1,5 +1,0 @@
-if(EXISTS "/root/TFG-FlashAttention/build/test/cuda_tests_e3b0c442_tests.cmake")
-  include("/root/TFG-FlashAttention/build/test/cuda_tests_e3b0c442_tests.cmake")
-else()
-  add_test(cuda_tests_NOT_BUILT cuda_tests_NOT_BUILT)
-endif()
