@@ -260,7 +260,7 @@ __device__ __forceinline__ pbf16_u32_m16_n16<tiles_k> ld_Q_tile_m16_k16_regs_v3(
     // Sin embargo, el registro puede pasar del 3 al 2 con distancia 1, y del 2 al 0 cuando la
     // distancia es 2.
 
-    // Angel note: This is because the compiler is failing to unroll the loops. Detects distance
+    // Note: This is because the compiler is failing to unroll the loops. Detects distance
     // as a dynamic variable. No dynamic indexing is done here, and everything can be done with
     // predicated instructions.
     __butterfly_stage<1>(reg, lane_id);
@@ -621,7 +621,7 @@ __device__ __forceinline__ void st_O_tile_m16_n128_regs_v2(
     //
     // --------------------------------------------------------
 
-    // Angel note: This is because the compiler is failing to unroll the loops. Detects distance
+    // Note: This is because the compiler is failing to unroll the loops. Detects distance
     // as a dynamic variable. No dynamic indexing is done here, and everything can be done with
     // predicated instructions.
     __butterfly_stage<1>(reg, lane_id);

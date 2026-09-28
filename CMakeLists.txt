@@ -12,7 +12,7 @@ set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Angel Note: Clangd fails to recognize imports if the includes are in response files.
+# Note: Clangd fails to recognize imports if the includes are in response files.
 # Disable them.
 set(CMAKE_CUDA_USE_RESPONSE_FILE_FOR_INCLUDES OFF)
 set(CMAKE_CUDA_USE_RESPONSE_FILE_FOR_LIBRARIES OFF)

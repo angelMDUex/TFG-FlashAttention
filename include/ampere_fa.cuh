@@ -168,7 +168,6 @@ __launch_bounds__(FA_WARPS_PER_BLOCK * 32, FA_MIN_CTAS_PER_SM) __global__ void f
             }
         }
         // Wait for at least the first KV buffer to fill.
-        // Pray for dead code optimization.
         cp_async_dco_wait_group<buffer_num>(KVm_tile_num - KVm_tile_id);
         // The KV tiles are loaded cooperatively.
         __syncthreads();
@@ -183,8 +182,6 @@ __launch_bounds__(FA_WARPS_PER_BLOCK * 32, FA_MIN_CTAS_PER_SM) __global__ void f
         // registers. One fragment is passed to CUDA and TensorCores during the
         // current matrix computation, while the other is used to receive shared
         // memory fetch returns for the next warp-level matrix operation.
-        // More: ChatGPT 5.6 sol 29/08/2026 presents problems reasoning about
-        // this, even though the documentation is Nvidia official.
         uint32_t matrix_id = lane_id / 8; // 0..3
         uint32_t row_8x8 = lane_id % 8;   // 0..7
 
