@@ -61,7 +61,6 @@
     #define EXP_VERSION POLY2_EXPF
 #endif
 
-// Hacky workaround
 constexpr uint32_t FA_BUFFER_UNROLL_VALUE = FA_BUFFER_UNROLL;
 constexpr uint32_t FA_UNCACHED_VALUE = FA_UNCACHED;
 constexpr uint32_t EXP_VERSION_VALUE = EXP_VERSION;
