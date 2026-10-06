@@ -27,7 +27,7 @@ Duración medida con NVIDIA Nsight Compute mediante `gpu__time_duration.sum` en 
 
 Para `N = 8192`, el tiempo de Torch SDPA es la suma de sus kernels `split-KV` y `combine`.
 
-![Comparación de rendimiento](flashattention_resultado_tfg.png)
+![Comparación de rendimiento](comparativa_rendimiento.png)
 
 Los perfiles utilizados para el análisis se conservan en [`profile/`](profile/), junto con los CSV de las búsquedas realizadas con Optuna y un informe completo del entorno experimental.
 
