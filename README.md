@@ -319,4 +319,3 @@ La memoria completa se encuentra en:
 
 [`docs/doc.pdf`](docs/doc.pdf)
 
-Antes de publicar o entregar una nueva revisión del proyecto, comprueba que este PDF corresponda exactamente a la versión final de la memoria.
